@@ -2,7 +2,7 @@
   "rewrites": [
     {
       "source": "/api/feishu/:path*",
-      "destination": "[https://open.feishu.cn/open-apis/:path](https://open.feishu.cn/open-apis/:path)*"
+      "destination": "https://open.feishu.cn/open-apis/:path*"
     }
   ]
 }
