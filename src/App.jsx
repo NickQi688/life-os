@@ -15,6 +15,7 @@ import {
 
 // --- CONFIGURATION ---
 const TUTORIAL_URL = "https://ai.feishu.cn/docx/SaxxdrgJkoACzUx2LOBcLknqnQf"; 
+const TEMPLATE_URL = "https://ai.feishu.cn/base/CJQBbksPWaMfzlsatFPcFKWAnLd?from=from_copylink";
 
 /**
  * --- UTILS: MOCK DATA ---
@@ -97,9 +98,7 @@ class FeishuService {
     try {
       const token = await this.getTenantAccessToken(config.appId, config.appSecret);
       if (!token) return MOCK_DATA;
-      // [UPDATED] 使用 encodeURIComponent 处理排序参数，防止 URL 解析错误
-      const sortParam = encodeURIComponent('["记录日期 DESC"]');
-      const data = await this.request(`/bitable/v1/apps/${config.appToken}/tables/${config.tableId}/records?page_size=500&sort=${sortParam}`, 'GET', null, token);
+      const data = await this.request(`/bitable/v1/apps/${config.appToken}/tables/${config.tableId}/records?page_size=500&sort=["记录日期 DESC"]`, 'GET', null, token);
       return data ? data.items : [];
     } catch (e) { 
       console.warn("Fetch records failed, using mock data:", e);
@@ -149,46 +148,6 @@ class FeishuService {
   async deleteRecord(recordId) {
     const { config, token } = await this.checkConfigOrThrow();
     return await this.request(`/bitable/v1/apps/${config.appToken}/tables/${config.tableId}/records/${recordId}`, 'DELETE', null, token);
-  }
-
-  async createTable(appId, appSecret, appToken) {
-    console.log("🚀 开始自动创建飞书表格...");
-    const token = await this.getTenantAccessToken(appId, appSecret);
-
-    const tableRes = await this.request(`/bitable/v1/apps/${appToken}/tables`, 'POST', {
-      table: { name: "LifeOS数据表" }
-    }, token);
-
-    if (!tableRes || !tableRes.table_id) throw new Error("创建表格失败，未返回 Table ID。");
-
-    const tableId = tableRes.table_id;
-    console.log(`✅ 表格创建成功: ${tableId}`);
-
-    const fieldsRes = await this.request(`/bitable/v1/apps/${appToken}/tables/${tableId}/fields`, 'GET', null, token);
-    const primaryFieldId = fieldsRes.items[0].field_id;
-    await this.request(`/bitable/v1/apps/${appToken}/tables/${tableId}/fields/${primaryFieldId}`, 'PUT', { field_name: "标题" }, token);
-
-    // [UPDATED] 使用全中文选项配置，避免 field validation failed
-    const fieldsToCreate = [
-      { field_name: "内容", type: 1 },
-      { field_name: "状态", type: 3, property: { options: [{ name: "收件箱" }, { name: "待办" }, { name: "进行中" }, { name: "已完成" }] } },
-      { field_name: "来源", type: 3, property: { options: [{ name: "Mobile" }, { name: "PC" }] } },
-      { field_name: "分类", type: 3, property: { options: [{ name: "收件箱" }, { name: "工作" }, { name: "生活" }, { name: "灵感" }, { name: "阅读" }] } },
-      { field_name: "标签", type: 4 },
-      { field_name: "类型", type: 3, property: { options: [{ name: "灵感" }, { name: "任务" }, { name: "笔记" }, { name: "日记" }] } },
-      { field_name: "优先级", type: 3, property: { options: [{ name: "紧急" }, { name: "普通" }, { name: "不急" }] } },
-      { field_name: "下一步", type: 4, property: { options: [{ name: "学习" }, { name: "整理" }, { name: "收藏使用" }, { name: "分享" }, { name: "待办" }] } },
-      { field_name: "内容方向", type: 3, property: { options: [{ name: "灵感" }, { name: "AI" }, { name: "提效工具" }, { name: "个人成长" }, { name: "自媒体" }, { name: "日记" }] } },
-      { field_name: "信息来源", type: 3, property: { options: [{ name: "推特" }, { name: "微信群" }, { name: "公众号" }, { name: "即刻" }, { name: "小红书" }, { name: "Youtube" }, { name: "其他" }] } },
-      { field_name: "设备来源", type: 3, property: { options: [{ name: "Mobile" }, { name: "PC" }] } },
-      { field_name: "截止日期", type: 5 },
-      { field_name: "记录日期", type: 5 } 
-    ];
-
-    for (const field of fieldsToCreate) {
-      await this.request(`/bitable/v1/apps/${appToken}/tables/${tableId}/fields`, 'POST', field, token);
-    }
-    return tableId;
   }
 }
 
@@ -404,6 +363,7 @@ const WelcomeScreen = ({ onStart }) => (
   <div className="min-h-screen bg-slate-950 text-slate-200 font-sans">
     <nav className="flex items-center justify-between px-6 py-6 max-w-7xl mx-auto border-b border-slate-800/50"><Logo /><button onClick={onStart} className="px-4 py-2 text-sm font-bold text-slate-300 bg-slate-800/50 border border-slate-700 rounded-lg hover:bg-slate-700 hover:text-white transition-all">开启体验 / 登录</button></nav>
     <div className="max-w-4xl mx-auto px-6 pt-20 pb-20 text-center animate-fade-in-up"><div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/10 text-indigo-400 text-xs font-bold uppercase tracking-wider mb-6 border border-indigo-500/20">v2.0 Dark Edition</div><h1 className="text-5xl md:text-7xl font-extrabold text-white tracking-tight mb-8 leading-tight">掌控你的 <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400">数字人生</span></h1><p className="text-xl md:text-2xl text-slate-400 mb-10 max-w-2xl mx-auto leading-relaxed">极速录入想法 · 深度管理任务 · 数据完全私有</p><button onClick={onStart} className="group relative inline-flex items-center justify-center px-8 py-4 font-bold text-white transition-all duration-200 bg-indigo-600 rounded-full hover:bg-indigo-500 hover:shadow-lg hover:shadow-indigo-500/25 hover:-translate-y-1">开启 LifeOS <ArrowRight className="ml-2 w-5 h-5 group-hover:translate-x-1 transition-transform" /></button></div>
+    
     <div className="bg-slate-900/50 py-24 border-y border-slate-800/50">
       <div className="max-w-7xl mx-auto px-6">
         <div className="grid md:grid-cols-3 gap-8">
@@ -413,17 +373,19 @@ const WelcomeScreen = ({ onStart }) => (
         </div>
       </div>
     </div>
+
     <div className="py-24">
         <div className="max-w-6xl mx-auto px-6">
            <div className="text-center mb-16"><h2 className="text-3xl font-bold text-white mb-4">只需三步，即刻开启</h2><p className="text-slate-500">连接飞书，无需复杂的服务器配置。</p></div>
            <div className="grid md:grid-cols-3 gap-8 relative">
               <div className="hidden md:block absolute top-8 left-0 w-full h-0.5 bg-slate-800 -z-10"></div>
-              <StepCard num="1" title="准备飞书表格" desc="在飞书新建多维表格，按照说明配置好字段。" />
+              <StepCard num="1" title="复制标准模版" desc="点击右下角按钮，将标准表格模版复制到你的飞书。" />
               <StepCard num="2" title="获取 API 密钥" desc="复制浏览器地址栏的 Base ID 和 Table ID。" />
               <StepCard num="3" title="开始使用" desc="填入配置，立即连接你的私人数据库。" />
            </div>
         </div>
     </div>
+
     <footer className="bg-slate-950 border-t border-slate-800 text-slate-500 py-12 text-center text-sm">
       <div className="max-w-2xl mx-auto px-4">
         <div className="flex flex-wrap justify-center gap-6 font-medium mb-8 text-slate-400">
@@ -438,8 +400,21 @@ const WelcomeScreen = ({ onStart }) => (
   </div>
 );
 
-const FeatureCard = ({ icon, color, title, desc }) => (<div className="bg-slate-900 border border-slate-800 p-8 rounded-2xl hover:border-slate-700 transition-colors"><div className={`w-12 h-12 ${color} rounded-xl flex items-center justify-center mb-6`}>{icon}</div><h3 className="text-xl font-bold mb-3 text-slate-200">{title}</h3><p className="text-slate-500 leading-relaxed text-sm">{desc}</p></div>);
-const StepCard = ({ num, title, desc }) => (<div className="bg-slate-900 p-6 rounded-2xl border border-slate-800 text-center relative z-10"><div className="w-10 h-10 bg-slate-800 text-white rounded-full flex items-center justify-center font-bold text-lg mx-auto mb-6 border-4 border-slate-950 shadow-lg">{num}</div><h3 className="text-lg font-bold mb-2 text-slate-200">{title}</h3><p className="text-sm text-slate-500 leading-relaxed">{desc}</p></div>);
+const FeatureCard = ({ icon, color, title, desc }) => (
+  <div className="bg-slate-900 border border-slate-800 p-8 rounded-2xl hover:border-slate-700 transition-colors">
+    <div className={`w-12 h-12 ${color} rounded-xl flex items-center justify-center mb-6`}>{icon}</div>
+    <h3 className="text-xl font-bold mb-3 text-slate-200">{title}</h3>
+    <p className="text-slate-500 leading-relaxed text-sm">{desc}</p>
+  </div>
+);
+
+const StepCard = ({ num, title, desc }) => (
+  <div className="bg-slate-900 p-6 rounded-2xl border border-slate-800 text-center relative z-10">
+    <div className="w-10 h-10 bg-slate-800 text-white rounded-full flex items-center justify-center font-bold text-lg mx-auto mb-6 border-4 border-slate-950 shadow-lg">{num}</div>
+    <h3 className="text-lg font-bold mb-2 text-slate-200">{title}</h3>
+    <p className="text-sm text-slate-500 leading-relaxed">{desc}</p>
+  </div>
+);
 
 const FieldGuide = () => {
   const [isOpen, setIsOpen] = useState(false);
@@ -458,7 +433,6 @@ const FieldGuide = () => {
               <div className="p-1.5 bg-slate-900 rounded border border-slate-800">下一步 (多选: 学习/整理/分享...)</div>
               <div className="p-1.5 bg-slate-900 rounded border border-slate-800">内容方向 (单选)</div>
               <div className="p-1.5 bg-slate-900 rounded border border-slate-800">信息来源 (单选)</div>
-              <div className="p-1.5 bg-slate-900 rounded border border-slate-800">设备来源 (单选: Mobile/PC)</div>
               <div className="p-1.5 bg-slate-900 rounded border border-slate-800">截止日期 (日期)</div>
               <div className="p-1.5 bg-slate-900 rounded border border-slate-800">记录日期 (日期)</div>
            </div>
@@ -470,18 +444,8 @@ const FieldGuide = () => {
 
 const SettingsScreen = ({ onSave, onCancel, initialConfig, notify, onLogout }) => {
   const [formData, setFormData] = useState({ appId: initialConfig?.appId || '', appSecret: initialConfig?.appSecret || '', appToken: initialConfig?.appToken || '', tableId: initialConfig?.tableId || '', });
-  const [isCreatingTable, setIsCreatingTable] = useState(false);
   const handleSubmit = (e) => { e.preventDefault(); onSave(formData); };
-  
-  const handleAutoCreateTable = async () => {
-    if (!formData.appId || !formData.appSecret || !formData.appToken) { notify("请先填写 App ID, App Secret 和 Base ID", "error"); return; }
-    setIsCreatingTable(true);
-    try {
-      const newTableId = await feishuService.createTable(formData.appId, formData.appSecret, formData.appToken);
-      setFormData(prev => ({ ...prev, tableId: newTableId }));
-      notify("表格初始化成功！字段已自动配置", "success");
-    } catch (error) { console.error(error); notify("创建失败: " + error.message, "error"); } finally { setIsCreatingTable(false); }
-  };
+  const TEMPLATE_URL = "https://ai.feishu.cn/base/CJQBbksPWaMfzlsatFPcFKWAnLd?from=from_copylink";
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-slate-950 p-6 text-slate-200">
@@ -497,10 +461,11 @@ const SettingsScreen = ({ onSave, onCancel, initialConfig, notify, onLogout }) =
              <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Table ID (数据表 ID)</label>
              <div className="flex gap-2">
                <input required type="text" className="w-full p-3 bg-slate-950 border border-slate-800 rounded-lg outline-none focus:border-indigo-500 text-slate-200" placeholder="tbl..." value={formData.tableId} onChange={e => setFormData({...formData, tableId: e.target.value})} />
-               <button type="button" onClick={handleAutoCreateTable} disabled={isCreatingTable || !formData.appToken} className={`whitespace-nowrap px-4 rounded-lg font-medium text-sm transition-all flex items-center gap-2 ${!formData.appToken ? 'bg-slate-800 text-slate-600 cursor-not-allowed' : 'bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30'}`}>
-                  {isCreatingTable ? <><Loader2 className="animate-spin" size={16} /> 创建中</> : <>✨ 一键新建表</>}
-               </button>
+               <a href={TEMPLATE_URL} target="_blank" rel="noopener noreferrer" className="whitespace-nowrap px-4 py-2 rounded-lg font-medium text-sm transition-all flex items-center gap-2 bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 border border-emerald-500/50">
+                  <Table size={16} /> 获取标准模版
+               </a>
              </div>
+             <p className="text-xs text-slate-500 mt-2">👉 点击按钮复制模版，然后从新模版的 URL 获取 Base ID 和 Table ID 填入。</p>
           </div>
           <FieldGuide />
           
@@ -655,11 +620,7 @@ const DesktopView = ({ onLogout, onSettings, notify, isDemoMode, onGoHome }) => 
       setDoingItems(data.filter(r => r.fields["状态"] === '进行中' && r.fields["类型"] === '任务'));
       setDoneItems(data.filter(r => r.fields["状态"] === '已完成' && r.fields["类型"] === '任务'));
       setKnowledgeItems(data.filter(r => r.fields["类型"] === '笔记' || r.fields["分类"] === '阅读'));
-      
-      // Journal Logic: Reverse sort by time
-      const sortedJournals = data.filter(r => r.fields["类型"] === '日记' || r.fields["内容方向"] === '日记')
-        .sort((a, b) => new Date(b.fields["记录日期"]) - new Date(a.fields["记录日期"]));
-      setJournalItems(sortedJournals);
+      setJournalItems(data.filter(r => r.fields["类型"] === '日记' || r.fields["内容方向"] === '日记'));
     } catch (e) { console.error(e); }
   };
 
@@ -771,7 +732,7 @@ const DesktopView = ({ onLogout, onSettings, notify, isDemoMode, onGoHome }) => 
                           </div>
                         );
                       })}
-                      {todayTasks.length === 0 && <div className="text-slate-600 text-sm text-center py-8">今日无待办任务</div>}
+                      {todayTasks.length + completedToday.length === 0 && <div className="text-slate-600 text-sm text-center py-8">今日无待办任务</div>}
                    </div>
                 </div>
 
