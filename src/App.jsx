@@ -193,12 +193,13 @@ class FeishuService {
 
   async addRecord(data) {
     const { config, token } = await this.checkConfigOrThrow();
-    const rawInput = data.title || "";
-    const firstLine = rawInput.split('\n')[0];
-    const smartTitle = firstLine.length > 40 ? firstLine.substring(0, 40) + "..." : firstLine;
-    const fullContent = rawInput + (data.content ? `\n\n【备注】\n${data.content}` : "");
-
-    const autoTags = extractTags(rawInput + " " + fullContent);
+    
+    let finalTitle = data.title;
+    if (!finalTitle && data.content) {
+       const firstLine = data.content.split('\n')[0];
+       finalTitle = firstLine.length > 20 ? firstLine.substring(0, 20) + "..." : firstLine;
+    }
+    const autoTags = extractTags(finalTitle + " " + data.content);
 
     const fields = {
       "标题": smartTitle || "无标题记录", 
@@ -812,7 +813,7 @@ const DesktopView = ({ onLogout, onSettings, notify, isDemoMode, onGoHome }) => 
             {activeTab === 'journal' && <><PenTool size={20} className="text-amber-400"/> 每日记录</>}
           </h2>
           <div className="flex items-center gap-4 text-xs text-slate-500">
-              <span className="hidden md:inline-flex items-center gap-1 bg-slate-900 border border-slate-800 px-2 py-1 rounded text-slate-400"><Command size={10} /> K 快速记录</span>
+              <span className="hidden md:inline-flex items-center gap-1 bg-slate-900 border border-slate-800 px-3 py-1 rounded-full text-slate-400 font-mono">{new Date().toLocaleDateString()}</span>
               <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center text-white font-bold shadow-lg">ME</div>
           </div>
         </header>
