@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Send, Settings, CheckCircle, Inbox, Zap, 
   LayoutDashboard, List, Smartphone, Monitor,
@@ -10,7 +10,7 @@ import {
   HelpCircle, AlertTriangle, Lock, RefreshCw, Eye, ChevronDown, ChevronUp,
   User, Mail, MessageCircle, Globe, Loader2, Info, AlertCircle, Check, FileText, 
   Dices, Sliders, Book, PenTool, Hash, Layout, Search, Command, Flame, BookOpen,
-  Edit3, MoreVertical, XCircle, ExternalLink, PlayCircle, StopCircle
+  Edit3, MoreVertical, XCircle, ExternalLink
 } from 'lucide-react';
 
 // --- CONFIGURATION ---
@@ -52,27 +52,15 @@ const extractTags = (text) => {
   return matches;
 };
 
-const formatDate = (timestamp) => {
-  if (!timestamp) return '';
-  const date = new Date(timestamp);
-  return date.toLocaleDateString();
-};
-
-const isSameDay = (d1, d2) => {
-  return d1.getFullYear() === d2.getFullYear() &&
-    d1.getMonth() === d2.getMonth() &&
-    d1.getDate() === d2.getDate();
-};
-
 /**
  * --- UTILS: MOCK DATA ---
  */
 const MOCK_DATA = [
-  { id: '101', fields: { "标题": "👋 欢迎使用 LifeOS！", "内容": "点击卡片编辑详情。", "状态": STATUS.INBOX, "类型": TYPE.IDEA, "优先级": PRIORITY.NORMAL, "内容方向": "灵感", "设备来源": "PC", "记录日期": Date.now() } },
-  { id: '102', fields: { "标题": "🔥 今日紧急任务", "状态": STATUS.TODO, "类型": TYPE.TASK, "优先级": PRIORITY.HIGH, "内容方向": "提效工具", "设备来源": "PC", "截止日期": Date.now(), "标签": ["工作"], "记录日期": Date.now() - 100000 } },
-  { id: '103', fields: { "标题": "正在进行的任务", "状态": STATUS.DOING, "类型": TYPE.TASK, "优先级": PRIORITY.NORMAL, "内容方向": "提效工具", "设备来源": "PC", "截止日期": Date.now(), "记录日期": Date.now() - 200000 } },
-  { id: '104', fields: { "标题": "已完成的任务", "状态": STATUS.DONE, "类型": TYPE.TASK, "优先级": PRIORITY.NORMAL, "内容方向": "个人成长", "设备来源": "Mobile", "截止日期": Date.now(), "记录日期": Date.now() - 300000 } },
-  { id: '105', fields: { "标题": "关于效率工具的思考 #PKM", "内容": "工具只是手段...", "状态": STATUS.DONE, "类型": TYPE.NOTE, "标签": ["PKM"], "内容方向": "个人成长", "设备来源": "PC", "记录日期": Date.now() - 400000 } },
+  { id: '101', fields: { "标题": "👋 欢迎使用 LifeOS！", "内容": "点击卡片编辑详情。", "状态": STATUS.INBOX, "类型": TYPE.IDEA, "优先级": PRIORITY.NORMAL, "内容方向": "灵感", "来源": "PC", "记录日期": Date.now() } },
+  { id: '102', fields: { "标题": "🔥 今日紧急任务", "状态": STATUS.TODO, "类型": TYPE.TASK, "优先级": PRIORITY.HIGH, "内容方向": "提效工具", "来源": "PC", "截止日期": Date.now(), "标签": ["工作"], "记录日期": Date.now() - 100000 } },
+  { id: '103', fields: { "标题": "正在进行的任务", "状态": STATUS.DOING, "类型": TYPE.TASK, "优先级": PRIORITY.NORMAL, "内容方向": "提效工具", "来源": "PC", "截止日期": Date.now(), "记录日期": Date.now() - 200000 } },
+  { id: '104', fields: { "标题": "已完成的任务", "状态": STATUS.DONE, "类型": TYPE.TASK, "优先级": PRIORITY.NORMAL, "内容方向": "个人成长", "来源": "Mobile", "截止日期": Date.now(), "记录日期": Date.now() - 300000 } },
+  { id: '105', fields: { "标题": "关于效率工具的思考 #PKM", "内容": "工具只是手段...", "状态": STATUS.DONE, "类型": TYPE.NOTE, "标签": ["PKM"], "内容方向": "个人成长", "来源": "PC", "记录日期": Date.now() - 400000 } },
 ];
 
 /**
@@ -84,9 +72,10 @@ class FeishuService {
     this.API_BASE = '/api/feishu'; 
     this.isPreview = typeof window !== 'undefined' && window.location.protocol === 'blob:';
     
+    // [UPDATED] 精简必需字段列表：移除了容易报错的 "设备来源" 和 "信息来源"
     this.REQUIRED_FIELDS = [
       "标题", "内容", "状态", "类型", "优先级", 
-      "内容方向", "设备来源", "标签", "下一步", 
+      "内容方向", "来源", "标签", "下一步", 
       "截止日期", "记录日期"
     ];
   }
@@ -134,7 +123,8 @@ class FeishuService {
       const result = await response.json();
       
       if (result.code === 1254045) {
-        throw new Error(`字段名不匹配！请检查飞书表格列名是否包含：\n${this.REQUIRED_FIELDS.join('、')}`);
+        // 详细提示哪个字段不对，帮助用户 debug
+        throw new Error(`字段名不匹配！LifeOS 试图写入以下字段，请检查飞书表格是否缺少其中之一：\n${this.REQUIRED_FIELDS.join('、')}`);
       }
       
       if (result.code !== 0) throw new Error(`Feishu API Error [${result.code}]: ${result.msg}`);
@@ -183,11 +173,11 @@ class FeishuService {
 
     const autoTags = extractTags(rawInput + " " + fullContent);
 
+    // [UPDATED] 移除 "设备来源" 和 "信息来源"，只保留核心字段
     const fields = {
       "标题": smartTitle || "无标题记录", 
       "内容": fullContent, 
       "来源": data.source || "PC", 
-      "设备来源": data.source || "PC",
       "状态": data.status || STATUS.INBOX, 
       "类型": data.type || TYPE.IDEA,  
       "优先级": data.priority || PRIORITY.NORMAL,
@@ -211,6 +201,40 @@ class FeishuService {
   async deleteRecord(recordId) {
     const { config, token } = await this.checkConfigOrThrow();
     return await this.request(`/bitable/v1/apps/${config.appToken}/tables/${config.tableId}/records/${recordId}`, 'DELETE', null, token);
+  }
+
+  // --- 自动建表 ---
+  async createTable(appId, appSecret, appToken) {
+    console.log("🚀 开始自动创建飞书表格...");
+    const token = await this.getTenantAccessToken(appId, appSecret);
+    const tableName = `LifeOS_${Date.now()}`;
+    const tableRes = await this.request(`/bitable/v1/apps/${appToken}/tables`, 'POST', { table: { name: tableName } }, token);
+
+    if (!tableRes || !tableRes.table_id) throw new Error("创建表格失败，未返回 Table ID。");
+
+    const tableId = tableRes.table_id;
+    const fieldsRes = await this.request(`/bitable/v1/apps/${appToken}/tables/${tableId}/fields`, 'GET', null, token);
+    const primaryFieldId = fieldsRes.items[0].field_id;
+    await this.request(`/bitable/v1/apps/${appToken}/tables/${tableId}/fields/${primaryFieldId}`, 'PUT', { field_name: "标题" }, token);
+
+    // [UPDATED] 移除多余字段创建
+    const fieldsToCreate = [
+      { field_name: "内容", type: 1 },
+      { field_name: "状态", type: 3, property: { options: [{ name: "收件箱" }, { name: "待办" }, { name: "进行中" }, { name: "已完成" }] } },
+      { field_name: "来源", type: 3, property: { options: [{ name: "Mobile" }, { name: "PC" }] } },
+      { field_name: "标签", type: 4 },
+      { field_name: "类型", type: 3, property: { options: [{ name: "灵感" }, { name: "任务" }, { name: "笔记" }, { name: "日记" }] } },
+      { field_name: "优先级", type: 3, property: { options: [{ name: "紧急" }, { name: "普通" }, { name: "不急" }] } },
+      { field_name: "下一步", type: 4, property: { options: [{ name: "学习" }, { name: "整理" }, { name: "收藏使用" }, { name: "分享" }, { name: "待办" }] } },
+      { field_name: "内容方向", type: 3, property: { options: [{ name: "灵感" }, { name: "AI" }, { name: "提效工具" }, { name: "个人成长" }, { name: "自媒体" }, { name: "日记" }] } },
+      { field_name: "截止日期", type: 5 },
+      { field_name: "记录日期", type: 5 } 
+    ];
+
+    for (const field of fieldsToCreate) {
+      await this.request(`/bitable/v1/apps/${appToken}/tables/${tableId}/fields`, 'POST', field, token);
+    }
+    return tableId;
   }
 }
 
@@ -348,7 +372,7 @@ const EditRecordModal = ({ isOpen, record, onClose, onSave }) => {
            </div>
            <div>
               <label className="text-xs font-bold text-slate-500 uppercase block mb-1">截止日期</label>
-              <input type="date" className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-slate-300 outline-none" value={formData["截止日期"]} onChange={e => setFormData({...formData, "截止日期": e.target.value})} />
+              <input type="date" className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-slate-300 outline-none" value={formData["截止日期"] || ""} onChange={e => setFormData({...formData, "截止日期": e.target.value})} />
            </div>
         </div>
 
@@ -474,7 +498,7 @@ const FieldGuide = () => {
               <div className="p-1.5 bg-slate-900 rounded border border-slate-800">优先级 (单选: 紧急/普通/不急)</div>
               <div className="p-1.5 bg-slate-900 rounded border border-slate-800">下一步 (多选: 学习/整理/分享...)</div>
               <div className="p-1.5 bg-slate-900 rounded border border-slate-800">内容方向 (单选)</div>
-              <div className="p-1.5 bg-slate-900 rounded border border-slate-800">设备来源 (单选: Mobile/PC)</div>
+              <div className="p-1.5 bg-slate-900 rounded border border-slate-800">来源 (单选: Mobile/PC)</div>
               <div className="p-1.5 bg-slate-900 rounded border border-slate-800">标签 (多选/文本)</div>
               <div className="p-1.5 bg-slate-900 rounded border border-slate-800">截止日期 (日期)</div>
               <div className="p-1.5 bg-slate-900 rounded border border-slate-800">记录日期 (日期)</div>
@@ -487,7 +511,19 @@ const FieldGuide = () => {
 
 const SettingsScreen = ({ onSave, onCancel, initialConfig, notify, onLogout }) => {
   const [formData, setFormData] = useState({ appId: initialConfig?.appId || '', appSecret: initialConfig?.appSecret || '', appToken: initialConfig?.appToken || '', tableId: initialConfig?.tableId || '', });
+  const [isCreatingTable, setIsCreatingTable] = useState(false);
   const handleSubmit = (e) => { e.preventDefault(); onSave(formData); };
+  
+  const handleAutoCreateTable = async () => {
+    if (!formData.appId || !formData.appSecret || !formData.appToken) { notify("请先填写 App ID, App Secret 和 Base ID", "error"); return; }
+    setIsCreatingTable(true);
+    try {
+      const newTableId = await feishuService.createTable(formData.appId, formData.appSecret, formData.appToken);
+      setFormData(prev => ({ ...prev, tableId: newTableId }));
+      notify("表格初始化成功！字段已自动配置", "success");
+    } catch (error) { console.error(error); notify("创建失败: " + error.message, "error"); } finally { setIsCreatingTable(false); }
+  };
+
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-slate-950 p-6 text-slate-200">
       <div className="bg-slate-900 p-8 rounded-2xl shadow-2xl w-full max-w-lg border border-slate-800">
@@ -529,6 +565,7 @@ const MobileView = ({ onSettings, notify }) => {
   const [isSending, setIsSending] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
   const [details, setDetails] = useState({ type: TYPE.IDEA, dueDate: "", note: "" });
+  const categories = ["Inbox 📥", "Work 💼", "Life 🏠", "Idea 💡", "Reading 📖"];
 
   useEffect(() => { loadData(); }, []);
 
@@ -556,14 +593,10 @@ const MobileView = ({ onSettings, notify }) => {
     if (!inputValue.trim()) return;
     setIsSending(true);
     try {
-      // 乐观更新 - 本地
-      const newRec = { id: "temp_" + Date.now(), fields: { "标题": inputValue, "状态": STATUS.INBOX, "类型": details.type, "创建时间": Date.now() } };
-      setRecentInputs([newRec, ...recentInputs]);
-      
       await feishuService.addRecord({ title: inputValue, content: details.note, source: "Mobile", type: details.type, dueDate: details.dueDate, status: STATUS.INBOX });
       setInputValue(""); setDetails({ type: TYPE.IDEA, dueDate: "", note: "" }); setShowDetails(false);
       notify("已记录", "success");
-      loadData(); // Sync real
+      loadData();
     } catch (error) { notify("发送失败", "error"); } finally { setIsSending(false); }
   };
 
@@ -606,7 +639,7 @@ const MobileView = ({ onSettings, notify }) => {
               <div key={item.id} onClick={() => setEditingItem(item)} className="bg-slate-900 p-4 rounded-xl border border-slate-800 flex justify-between items-start active:scale-[0.98] transition-transform">
                 <div>
                   <div className="text-slate-200 font-medium line-clamp-2 text-sm">{item.fields["标题"]}</div>
-                  <div className="flex items-center gap-2 mt-2"><span className="text-[10px] text-slate-500">{item.fields["创建时间"] ? new Date(item.fields["创建时间"]).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '刚刚'}</span></div>
+                  <div className="flex items-center gap-2 mt-2"><span className="text-[10px] text-slate-500">{new Date(item.fields["记录日期"]).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span></div>
                 </div>
                 <div className="text-slate-600"><Edit3 size={16} /></div>
               </div>
@@ -619,14 +652,15 @@ const MobileView = ({ onSettings, notify }) => {
         <div className="p-4">
           {showDetails && (
             <div className="mb-4 space-y-4 animate-fade-in">
+              <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">{categories.map(cat => (<button key={cat} onClick={() => setDetails({...details, category: cat})} className={`whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-bold transition-all ${details.category === cat ? 'bg-indigo-600 text-white shadow-md shadow-indigo-200' : 'bg-slate-800 border-slate-700 text-slate-400'}`}>{cat}</button>))}</div>
               <div className="grid grid-cols-2 gap-3">
-                <div className="bg-slate-50 p-1 rounded-lg flex text-xs font-medium text-slate-500 relative"><div className={`absolute top-1 bottom-1 w-1/2 bg-white rounded shadow-sm transition-all duration-300 ${details.type === TYPE.TASK ? 'left-1/2' : 'left-0'}`} /><button onClick={() => setDetails({...details, type: TYPE.IDEA})} className={`flex-1 flex items-center justify-center gap-1 z-10 transition-colors ${details.type === TYPE.IDEA ? 'text-indigo-600' : ''}`}><Lightbulb size={14} /> 灵感</button><button onClick={() => setDetails({...details, type: TYPE.TASK})} className={`flex-1 flex items-center justify-center gap-1 z-10 transition-colors ${details.type === TYPE.TASK ? 'text-indigo-600' : ''}`}><CheckSquare size={14} /> 任务</button></div>
-                {details.type === TYPE.TASK && (<input type="date" className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1 text-xs text-slate-600 focus:outline-none focus:border-indigo-500" onChange={e => setDetails({...details, dueDate: e.target.value})} />)}
+                <div className="bg-slate-50 p-1 rounded-lg flex text-xs font-medium text-slate-500 relative"><div className={`absolute top-1 bottom-1 w-1/2 bg-white rounded shadow-sm transition-all duration-300 ${details.type === '任务' ? 'left-1/2' : 'left-0'}`} /><button onClick={() => setDetails({...details, type: '灵感'})} className={`flex-1 flex items-center justify-center gap-1 z-10 transition-colors ${details.type === '灵感' ? 'text-indigo-600' : ''}`}><Lightbulb size={14} /> 想法</button><button onClick={() => setDetails({...details, type: '任务'})} className={`flex-1 flex items-center justify-center gap-1 z-10 transition-colors ${details.type === '任务' ? 'text-indigo-600' : ''}`}><CheckSquare size={14} /> 任务</button></div>
+                {details.type === '任务' && (<input type="date" value={details.dueDate} onChange={(e) => setDetails({...details, dueDate: e.target.value})} className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-1 text-xs text-slate-600 focus:outline-none focus:border-indigo-500" />)}
               </div>
-              <textarea className="w-full bg-slate-50 rounded-xl p-3 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none h-20 text-slate-800" placeholder="添加备注..." onChange={e => setDetails({...details, note: e.target.value})} />
+              <textarea value={details.note} onChange={(e) => setDetails({...details, note: e.target.value})} placeholder="添加额外备注 (可选)..." className="w-full bg-slate-50 rounded-xl p-3 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none h-20" />
             </div>
           )}
-          <div className="relative flex items-end gap-2"><button onClick={() => setShowDetails(!showDetails)} className={`mb-1 p-2 rounded-xl transition-colors ${showDetails ? 'bg-indigo-500/20 text-indigo-400' : 'bg-slate-800 text-slate-400 hover:text-white'}`}><MoreHorizontal size={24} /></button><textarea value={inputValue} onChange={(e) => setInputValue(e.target.value)} placeholder={details.type === TYPE.TASK ? "要做什么？" : "记录你的想法..."} className="flex-1 bg-slate-800/50 border border-slate-700 rounded-2xl p-4 text-base text-white focus:outline-none focus:bg-slate-800 focus:border-indigo-500/50 transition-all resize-none h-14 max-h-32 placeholder-slate-500" rows={1} style={{ minHeight: '3.5rem' }} /><button onClick={handleSend} disabled={!inputValue.trim() || isSending} className={`h-14 w-14 rounded-2xl flex items-center justify-center transition-all ${!inputValue.trim() ? 'bg-slate-800 text-slate-500' : 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/40 hover:scale-105 active:scale-95'}`}>{isSending ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Send size={24} />}</button></div>
+          <div className="relative flex items-end gap-2"><button onClick={() => setShowDetails(!showDetails)} className={`mb-1 p-2 rounded-xl transition-colors ${showDetails ? 'bg-indigo-500/20 text-indigo-400' : 'bg-slate-800 text-slate-400 hover:text-white'}`}><MoreHorizontal size={24} /></button><textarea value={inputValue} onChange={(e) => setInputValue(e.target.value)} placeholder={details.type === '任务' ? "要做什么？" : "记录你的想法..."} className="flex-1 bg-slate-800/50 border border-slate-700 rounded-2xl p-4 text-base text-white focus:outline-none focus:bg-slate-800 focus:border-indigo-500/50 transition-all resize-none h-14 max-h-32 placeholder-slate-500" rows={1} style={{ minHeight: '3.5rem' }} /><button onClick={handleSend} disabled={!inputValue.trim() || isSending} className={`h-14 w-14 rounded-2xl flex items-center justify-center transition-all ${!inputValue.trim() ? 'bg-slate-800 text-slate-500' : 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/40 hover:scale-105 active:scale-95'}`}>{isSending ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Send size={24} />}</button></div>
         </div>
       </div>
     </div>
@@ -650,7 +684,7 @@ const DesktopView = ({ onLogout, onSettings, notify, isDemoMode, onGoHome }) => 
   const [quickInput, setQuickInput] = useState("");
   const [isQuickAdding, setIsQuickAdding] = useState(false);
   const [inputExpanded, setInputExpanded] = useState(false);
-  const [desktopDetails, setDesktopDetails] = useState({ type: TYPE.IDEA, priority: PRIORITY.NORMAL, direction: "灵感", nextActions: [], dueDate: "", note: "" });
+  const [desktopDetails, setDesktopDetails] = useState({ type: "灵感", priority: "普通", direction: "灵感", infoSource: "其他", nextActions: [], dueDate: "", note: "" });
   const inputRef = useRef(null);
 
   // Dashboard Stats
@@ -658,20 +692,11 @@ const DesktopView = ({ onLogout, onSettings, notify, isDemoMode, onGoHome }) => 
   
   // Today's Tasks Logic
   const todayStr = new Date().toDateString();
-  const priorityOrder = { [PRIORITY.HIGH]: 0, [PRIORITY.NORMAL]: 1, [PRIORITY.LOW]: 2 };
-  
-  const todayTasks = records
-    .filter(r => r.fields["类型"] === TYPE.TASK && r.fields["截止日期"] && new Date(r.fields["截止日期"]).toDateString() === todayStr)
-    .sort((a, b) => {
-       const pA = priorityOrder[a.fields["优先级"]] ?? 1;
-       const pB = priorityOrder[b.fields["优先级"]] ?? 1;
-       if (pA !== pB) return pA - pB;
-       const doneA = a.fields["状态"] === STATUS.DONE ? 1 : 0;
-       const doneB = b.fields["状态"] === STATUS.DONE ? 1 : 0;
-       return doneA - doneB;
-    });
+  const todayTasks = records.filter(r => r.fields["类型"] === '任务' && r.fields["状态"] !== '已完成' && r.fields["截止日期"] && new Date(r.fields["截止日期"]).toDateString() === todayStr);
+  const completedToday = records.filter(r => r.fields["状态"] === '已完成' && r.fields["截止日期"] && new Date(r.fields["截止日期"]).toDateString() === todayStr);
 
   const directions = ["灵感", "AI", "提效工具", "个人成长", "自媒体", "日记"];
+  const sources = ["推特", "微信群", "公众号", "即刻", "小红书", "Youtube", "其他"];
   const actions = ["学习", "整理", "收藏使用", "分享", "待办"];
 
   useEffect(() => { loadData(); }, []);
@@ -684,12 +709,12 @@ const DesktopView = ({ onLogout, onSettings, notify, isDemoMode, onGoHome }) => 
     try {
       const data = await feishuService.fetchRecords();
       setRecords(data);
-      setInboxItems(data.filter(r => r.fields["状态"] === STATUS.INBOX));
-      setTodoItems(data.filter(r => r.fields["状态"] === STATUS.TODO));
-      setDoingItems(data.filter(r => r.fields["状态"] === STATUS.DOING));
-      setDoneItems(data.filter(r => r.fields["状态"] === STATUS.DONE));
-      setKnowledgeItems(data.filter(r => r.fields["类型"] === TYPE.NOTE || r.fields["分类"] === '阅读'));
-      setJournalItems(data.filter(r => r.fields["类型"] === TYPE.JOURNAL || r.fields["内容方向"] === '日记'));
+      setInboxItems(data.filter(r => r.fields["状态"] === '收件箱'));
+      setTodoItems(data.filter(r => r.fields["状态"] === '待办' && r.fields["类型"] === '任务'));
+      setDoingItems(data.filter(r => r.fields["状态"] === '进行中' && r.fields["类型"] === '任务'));
+      setDoneItems(data.filter(r => r.fields["状态"] === '已完成' && r.fields["类型"] === '任务'));
+      setKnowledgeItems(data.filter(r => r.fields["类型"] === '笔记' || r.fields["分类"] === '阅读'));
+      setJournalItems(data.filter(r => r.fields["类型"] === '日记' || r.fields["内容方向"] === '日记'));
     } catch (e) { console.error(e); }
   };
 
@@ -703,23 +728,9 @@ const DesktopView = ({ onLogout, onSettings, notify, isDemoMode, onGoHome }) => 
     e.preventDefault();
     if (!quickInput.trim()) return;
     setIsQuickAdding(true);
-    // Optimistic
-    const newRecord = { 
-        id: "temp_" + Date.now(), 
-        fields: { "标题": quickInput.split('\n')[0], "状态": STATUS.INBOX, "类型": desktopDetails.type, "优先级": desktopDetails.priority, "内容方向": desktopDetails.direction, "创建时间": Date.now() } 
-    };
-    setInboxItems([newRecord, ...inboxItems]);
-    setQuickInput(""); setInputExpanded(false);
-    
     await handleAction(async () => {
-        await feishuService.addRecord({ 
-            title: newRecord.fields["标题"], content: desktopDetails.note, source: "PC", 
-            type: desktopDetails.type, priority: desktopDetails.priority,
-            direction: desktopDetails.direction, nextActions: desktopDetails.nextActions,
-            dueDate: desktopDetails.type === TYPE.TASK ? desktopDetails.dueDate : null, 
-            status: STATUS.INBOX, tags: []
-        });
-        setDesktopDetails({ type: TYPE.IDEA, priority: PRIORITY.NORMAL, direction: "灵感", nextActions: [], dueDate: "", note: "" });
+        await feishuService.addRecord({ title: quickInput, content: desktopDetails.note, source: "PC", type: desktopDetails.type, priority: desktopDetails.priority, direction: desktopDetails.direction, infoSource: desktopDetails.infoSource, nextActions: desktopDetails.nextActions, dueDate: desktopDetails.type === '任务' ? desktopDetails.dueDate : null, status: "收件箱", tags: [] });
+        setQuickInput(""); setDesktopDetails({ type: "灵感", priority: "普通", direction: "灵感", infoSource: "其他", nextActions: [], dueDate: "", note: "" }); setInputExpanded(false);
         notify("已记录", "success");
     });
     setIsQuickAdding(false);
@@ -729,38 +740,10 @@ const DesktopView = ({ onLogout, onSettings, notify, isDemoMode, onGoHome }) => 
     await handleAction(async () => { await feishuService.addRecord(data); notify("已保存", "success"); });
   };
 
-  // Today's Task Quick Add
-  const [todayInput, setTodayInput] = useState("");
-  const handleTodayAdd = async (e) => {
-    e.preventDefault();
-    if (!todayInput.trim()) return;
-    
-    const newRec = { id: "t_"+Date.now(), fields: { "标题": todayInput, "状态": STATUS.DOING, "类型": TYPE.TASK, "优先级": PRIORITY.NORMAL, "截止日期": Date.now() } };
-    setRecords([newRec, ...records]); // Optimistic
-    setTodayInput("");
-
-    await handleAction(async () => {
-       await feishuService.addRecord({
-           title: newRec.fields["标题"], status: STATUS.DOING, type: TYPE.TASK, priority: PRIORITY.NORMAL, dueDate: new Date().toISOString().split('T')[0], source: "PC"
-       });
-       notify("任务已添加至今日", "success");
-    });
-  }
-
-  const handleUpdateStatus = async (id, status) => {
-    // Optimistic
-    const updatedRecords = records.map(r => r.id === id ? { ...r, fields: { ...r.fields, "状态": status } } : r);
-    setRecords(updatedRecords);
-    // Update local lists immediately for smooth UI
-    setTodoItems(updatedRecords.filter(r => r.fields["状态"] === STATUS.TODO));
-    setDoingItems(updatedRecords.filter(r => r.fields["状态"] === STATUS.DOING));
-    setDoneItems(updatedRecords.filter(r => r.fields["状态"] === STATUS.DONE));
-    
-    try {
-        await feishuService.updateRecord(id, { "状态": status });
-        notify("状态已更新", "success");
-    } catch (e) { notify("更新失败", "error"); loadData(); }
-  };
+  const handleUpdateStatus = (id, status) => handleAction(async () => {
+    await feishuService.updateRecord(id, { "状态": status });
+    notify("状态已更新", "success");
+  });
 
   const handleEditSave = (id, fields) => handleAction(async () => {
     await feishuService.updateRecord(id, fields);
@@ -768,13 +751,7 @@ const DesktopView = ({ onLogout, onSettings, notify, isDemoMode, onGoHome }) => 
     notify("修改已保存", "success");
   });
 
-  const handleDelete = (id) => { 
-      if(confirm("确定删除吗？")) { 
-          setInboxItems(inboxItems.filter(i => i.id !== id)); // Optimistic
-          handleAction(async () => { await feishuService.deleteRecord(id); notify("已删除", "success"); }); 
-      } 
-  };
-  
+  const handleDelete = (id) => { if(confirm("确定删除吗？")) { handleAction(async () => { await feishuService.deleteRecord(id); notify("已删除", "success"); }); } };
   const toggleAction = (action) => { setDesktopDetails(prev => ({ ...prev, nextActions: prev.nextActions.includes(action) ? prev.nextActions.filter(a => a !== action) : [...prev.nextActions, action] })); };
 
   return (
@@ -834,40 +811,22 @@ const DesktopView = ({ onLogout, onSettings, notify, isDemoMode, onGoHome }) => 
                    <div><div className="text-4xl font-bold text-white mb-1">{stats.todo + stats.doing}</div><div className="text-slate-500 text-sm">剩余任务</div></div>
                 </div>
 
-                {/* TODAY'S TASKS (Updated with Input & Completed Visibility) */}
+                {/* TODAY'S TASKS (Updated) */}
                 <div className="md:col-span-2 bg-slate-900 border border-slate-800 p-6 rounded-3xl">
-                   <div className="flex items-center justify-between mb-4">
-                     <div className="flex items-center gap-2 text-slate-400 text-sm font-bold uppercase tracking-wider"><Calendar size={14}/> 今日任务</div>
-                   </div>
-                   <form onSubmit={handleTodayAdd} className="mb-4 relative">
-                      <input 
-                        type="text" 
-                        placeholder="快速添加今日任务 (回车保存)..." 
-                        className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2 text-sm text-slate-200 focus:border-indigo-500 outline-none"
-                        value={todayInput}
-                        onChange={e => setTodayInput(e.target.value)}
-                      />
-                      <button type="submit" disabled={!todayInput.trim()} className="absolute right-2 top-1.5 text-slate-400 hover:text-indigo-400 disabled:opacity-0 transition-all"><Plus size={18}/></button>
-                   </form>
-                   <div className="space-y-2 max-h-[300px] overflow-y-auto custom-scrollbar">
+                   <div className="flex items-center gap-2 text-slate-400 text-sm font-bold uppercase tracking-wider mb-4"><Calendar size={14}/> 今日任务</div>
+                   <div className="space-y-2">
                       {todayTasks.map(item => {
                         const isDone = item.fields["状态"] === STATUS.DONE;
                         return (
-                          <div key={item.id} onClick={() => setEditingItem(item)} className={`flex items-center gap-3 p-3 rounded-xl border transition-all ${isDone ? 'bg-slate-900 border-slate-800 opacity-60' : 'bg-slate-800 border-slate-700 hover:border-indigo-500/50'} cursor-pointer group`}>
-                             <button onClick={(e) => { e.stopPropagation(); handleUpdateStatus(item.id, isDone ? STATUS.DOING : STATUS.DONE); }} className={`w-5 h-5 rounded flex items-center justify-center transition-all ${isDone ? 'bg-emerald-500 text-white' : 'border-2 border-slate-500 hover:border-emerald-500'}`}>
+                          <div key={item.id} onClick={() => setEditingItem(item)} className={`flex items-center gap-3 p-3 rounded-xl border transition-all ${isDone ? 'bg-slate-900 border-slate-800 opacity-50' : 'bg-slate-800 border-slate-700 hover:border-indigo-500/50'} cursor-pointer group`}>
+                             <button onClick={(e) => { e.stopPropagation(); handleUpdateStatus(item.id, isDone ? '待办' : '已完成'); }} className={`w-5 h-5 rounded flex items-center justify-center transition-all ${isDone ? 'bg-emerald-500 text-white' : 'border-2 border-slate-500 hover:border-emerald-500'}`}>
                                 {isDone && <Check size={12} />}
                              </button>
-                             <div className="flex-1">
-                                <span className={`text-sm ${isDone ? 'text-slate-500 line-through' : 'text-slate-200'}`}>{item.fields["标题"]}</span>
-                                <div className="flex gap-2 mt-1">
-                                  <span className={`text-[10px] px-1.5 rounded border ${isDone ? 'border-slate-800 text-slate-600' : 'border-slate-600 text-slate-400'}`}>{item.fields["状态"]}</span>
-                                  {item.fields["优先级"] === PRIORITY.HIGH && !isDone && <span className="text-[10px] text-red-400 flex items-center gap-0.5"><Flame size={10}/> 紧急</span>}
-                                </div>
-                             </div>
+                             <span className={`text-sm ${isDone ? 'text-slate-500 line-through' : 'text-slate-200'}`}>{item.fields["标题"]}</span>
                           </div>
                         );
                       })}
-                      {todayTasks.length === 0 && <div className="text-slate-600 text-sm text-center py-4">今日无待办任务</div>}
+                      {todayTasks.length + completedToday.length === 0 && <div className="text-slate-600 text-sm text-center py-8">今日无待办任务</div>}
                    </div>
                 </div>
 
@@ -877,8 +836,8 @@ const DesktopView = ({ onLogout, onSettings, notify, isDemoMode, onGoHome }) => 
                       {[...journalItems, ...knowledgeItems].slice(0, 3).map(item => (
                          <div key={item.id} onClick={() => setEditingItem(item)} className="flex items-center justify-between p-3 hover:bg-slate-800 rounded-xl transition-colors cursor-pointer group">
                             <div className="flex items-center gap-3">
-                               <div className={`p-2 rounded-lg ${item.fields["类型"] === TYPE.JOURNAL ? 'bg-amber-500/10 text-amber-400' : 'bg-emerald-500/10 text-emerald-400'}`}>
-                                  {item.fields["类型"] === TYPE.JOURNAL ? <PenTool size={14}/> : <BookOpen size={14}/>}
+                               <div className={`p-2 rounded-lg ${item.fields["类型"] === '日记' ? 'bg-amber-500/10 text-amber-400' : 'bg-emerald-500/10 text-emerald-400'}`}>
+                                  {item.fields["类型"] === '日记' ? <PenTool size={14}/> : <BookOpen size={14}/>}
                                </div>
                                <span className="text-slate-300 text-sm truncate max-w-[200px]">{item.fields["标题"]}</span>
                             </div>
@@ -903,7 +862,7 @@ const DesktopView = ({ onLogout, onSettings, notify, isDemoMode, onGoHome }) => 
 
               {inboxItems.map(item => (
                 <div key={item.id} onClick={() => setEditingItem(item)} className="bg-slate-900 border border-slate-800 p-4 rounded-2xl flex items-start gap-4 hover:border-indigo-500/30 transition-all group cursor-pointer">
-                  <div className="mt-1 p-2 bg-slate-800 rounded-lg text-slate-400">{item.fields["类型"] === TYPE.TASK ? <CheckSquare size={18} /> : <Lightbulb size={18} />}</div>
+                  <div className="mt-1 p-2 bg-slate-800 rounded-lg text-slate-400">{item.fields["类型"] === '任务' ? <CheckSquare size={18} /> : <Lightbulb size={18} />}</div>
                   <div className="flex-1">
                       <h3 className="text-slate-200 font-medium mb-1">{item.fields["标题"]}</h3>
                       <p className="text-xs text-slate-500 line-clamp-2 mb-2">{item.fields["内容"]}</p>
@@ -912,7 +871,7 @@ const DesktopView = ({ onLogout, onSettings, notify, isDemoMode, onGoHome }) => 
                         <span className="text-[10px] bg-slate-800 px-1.5 py-0.5 rounded text-slate-500 border border-slate-700">{item.fields["信息来源"]}</span>
                       </div>
                       <div className="flex gap-2 mt-3 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button onClick={(e) => { e.stopPropagation(); handleUpdateStatus(item.id, STATUS.TODO); }} className="text-xs bg-slate-800 hover:bg-blue-500/20 hover:text-blue-300 px-3 py-1 rounded border border-slate-700 transition-colors">转为待办</button>
+                        <button onClick={(e) => { e.stopPropagation(); handleUpdateStatus(item.id, '待办'); }} className="text-xs bg-slate-800 hover:bg-blue-500/20 hover:text-blue-300 px-3 py-1 rounded border border-slate-700 transition-colors">转为待办</button>
                         <button onClick={(e) => { e.stopPropagation(); handleDelete(item.id); }} className="text-xs bg-slate-800 hover:bg-red-500/20 hover:text-red-300 px-3 py-1 rounded border border-slate-700 transition-colors flex items-center gap-1"><Trash2 size={12}/> 删除</button>
                       </div>
                   </div>
@@ -925,11 +884,11 @@ const DesktopView = ({ onLogout, onSettings, notify, isDemoMode, onGoHome }) => 
           {/* VIEW: PLANNER */}
           {activeTab === 'planner' && (
             <div className="flex gap-6 h-full overflow-x-auto pb-4">
-              {[STATUS.TODO, STATUS.DOING, STATUS.DONE].map(status => (
+              {['待办', '进行中', '已完成'].map(status => (
                 <div key={status} className="flex-1 min-w-[300px] bg-slate-900/50 rounded-2xl border border-slate-800 flex flex-col">
                   <div className="p-4 border-b border-slate-800 flex justify-between items-center"><span className="font-bold text-slate-400">{status}</span></div>
                   <div className="p-3 flex-1 overflow-y-auto custom-scrollbar">
-                    {(status === STATUS.TODO ? todoItems : status === STATUS.DOING ? doingItems : doneItems).map(item => <KanbanCard key={item.id} item={item} onMove={handleUpdateStatus} onClick={() => setEditingItem(item)} />)}
+                    {(status === '待办' ? todoItems : status === '进行中' ? doingItems : doneItems).map(item => <KanbanCard key={item.id} item={item} onMove={handleUpdateStatus} onClick={() => setEditingItem(item)} />)}
                   </div>
                 </div>
               ))}
@@ -946,7 +905,7 @@ const DesktopView = ({ onLogout, onSettings, notify, isDemoMode, onGoHome }) => 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {knowledgeItems.filter(i => i.fields["标题"].includes(searchText)).map(item => (
                     <div key={item.id} onClick={() => setEditingItem(item)} className="bg-slate-900 border border-slate-800 p-5 rounded-2xl hover:border-emerald-500/30 transition-all h-48 flex flex-col group cursor-pointer">
-                      <div className="flex items-center gap-2 mb-3 text-emerald-400 text-xs font-bold uppercase tracking-wider"><BookOpen size={14} /> {item.fields["内容方向"] || "Note"}</div>
+                      <div className="flex items-center gap-2 mb-3 text-emerald-400 text-xs font-bold uppercase tracking-wider"><BookOpen size={14} /> {item.fields["分类"] || "Note"}</div>
                       <h3 className="text-lg font-bold text-slate-200 mb-2 line-clamp-1">{item.fields["标题"]}</h3>
                       <p className="text-sm text-slate-500 line-clamp-3 flex-1">{item.fields["内容"]}</p>
                       <div className="pt-4 mt-2 border-t border-slate-800 flex gap-2">{item.fields["标签"]?.map(tag => (<span key={tag} className="text-[10px] bg-slate-800 px-2 py-1 rounded text-slate-400">#{tag}</span>))}</div>
