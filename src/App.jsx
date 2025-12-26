@@ -72,7 +72,7 @@ class FeishuService {
     this.API_BASE = '/api/feishu'; 
     this.isPreview = typeof window !== 'undefined' && window.location.protocol === 'blob:';
     
-    // [UPDATED] 精简必需字段列表：移除了容易报错的 "设备来源" 和 "信息来源"
+    // [UPDATED] 精简必需字段列表
     this.REQUIRED_FIELDS = [
       "标题", "内容", "状态", "类型", "优先级", 
       "内容方向", "来源", "标签", "下一步", 
@@ -123,8 +123,7 @@ class FeishuService {
       const result = await response.json();
       
       if (result.code === 1254045) {
-        // 详细提示哪个字段不对，帮助用户 debug
-        throw new Error(`字段名不匹配！LifeOS 试图写入以下字段，请检查飞书表格是否缺少其中之一：\n${this.REQUIRED_FIELDS.join('、')}`);
+        throw new Error(`字段名不匹配！请检查飞书表格列名是否包含：\n${this.REQUIRED_FIELDS.join('、')}`);
       }
       
       if (result.code !== 0) throw new Error(`Feishu API Error [${result.code}]: ${result.msg}`);
@@ -173,7 +172,6 @@ class FeishuService {
 
     const autoTags = extractTags(rawInput + " " + fullContent);
 
-    // [UPDATED] 移除 "设备来源" 和 "信息来源"，只保留核心字段
     const fields = {
       "标题": smartTitle || "无标题记录", 
       "内容": fullContent, 
@@ -217,7 +215,6 @@ class FeishuService {
     const primaryFieldId = fieldsRes.items[0].field_id;
     await this.request(`/bitable/v1/apps/${appToken}/tables/${tableId}/fields/${primaryFieldId}`, 'PUT', { field_name: "标题" }, token);
 
-    // [UPDATED] 移除多余字段创建
     const fieldsToCreate = [
       { field_name: "内容", type: 1 },
       { field_name: "状态", type: 3, property: { options: [{ name: "收件箱" }, { name: "待办" }, { name: "进行中" }, { name: "已完成" }] } },
@@ -513,16 +510,7 @@ const SettingsScreen = ({ onSave, onCancel, initialConfig, notify, onLogout }) =
   const [formData, setFormData] = useState({ appId: initialConfig?.appId || '', appSecret: initialConfig?.appSecret || '', appToken: initialConfig?.appToken || '', tableId: initialConfig?.tableId || '', });
   const [isCreatingTable, setIsCreatingTable] = useState(false);
   const handleSubmit = (e) => { e.preventDefault(); onSave(formData); };
-  
-  const handleAutoCreateTable = async () => {
-    if (!formData.appId || !formData.appSecret || !formData.appToken) { notify("请先填写 App ID, App Secret 和 Base ID", "error"); return; }
-    setIsCreatingTable(true);
-    try {
-      const newTableId = await feishuService.createTable(formData.appId, formData.appSecret, formData.appToken);
-      setFormData(prev => ({ ...prev, tableId: newTableId }));
-      notify("表格初始化成功！字段已自动配置", "success");
-    } catch (error) { console.error(error); notify("创建失败: " + error.message, "error"); } finally { setIsCreatingTable(false); }
-  };
+  const TEMPLATE_URL = "https://ai.feishu.cn/base/CJQBbksPWaMfzlsatFPcFKWAnLd?from=from_copylink";
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-slate-950 p-6 text-slate-200">
@@ -564,7 +552,7 @@ const MobileView = ({ onSettings, notify }) => {
   const [inputValue, setInputValue] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
-  const [details, setDetails] = useState({ type: TYPE.IDEA, dueDate: "", note: "" });
+  const [details, setDetails] = useState({ category: "Inbox", type: "灵感", dueDate: "", note: "" });
   const categories = ["Inbox 📥", "Work 💼", "Life 🏠", "Idea 💡", "Reading 📖"];
 
   useEffect(() => { loadData(); }, []);
@@ -574,18 +562,8 @@ const MobileView = ({ onSettings, notify }) => {
       const data = await feishuService.fetchRecords();
       setRecords(data);
       const todayStr = new Date().toDateString();
-      const tasks = data.filter(r => r.fields["类型"] === TYPE.TASK && r.fields["截止日期"] && new Date(r.fields["截止日期"]).toDateString() === todayStr)
-                        .sort((a, b) => {
-                           const priorityOrder = { [PRIORITY.HIGH]: 0, [PRIORITY.NORMAL]: 1, [PRIORITY.LOW]: 2 };
-                           const pA = priorityOrder[a.fields["优先级"]] ?? 1;
-                           const pB = priorityOrder[b.fields["优先级"]] ?? 1;
-                           if (pA !== pB) return pA - pB;
-                           const doneA = a.fields["状态"] === STATUS.DONE ? 1 : 0;
-                           const doneB = b.fields["状态"] === STATUS.DONE ? 1 : 0;
-                           return doneA - doneB;
-                        });
-      setTodayTasks(tasks);
-      setRecentInputs(data.filter(r => r.fields["状态"] === STATUS.INBOX).slice(0, 8)); 
+      setTodayTasks(data.filter(r => r.fields["类型"] === '任务' && r.fields["状态"] !== '已完成' && r.fields["截止日期"] && new Date(r.fields["截止日期"]).toDateString() === todayStr));
+      setRecentInputs(data.slice(0, 8)); // 取最近8条
     } catch (e) { console.error(e); }
   };
 
@@ -593,15 +571,14 @@ const MobileView = ({ onSettings, notify }) => {
     if (!inputValue.trim()) return;
     setIsSending(true);
     try {
-      await feishuService.addRecord({ title: inputValue, content: details.note, source: "Mobile", type: details.type, dueDate: details.dueDate, status: STATUS.INBOX });
-      setInputValue(""); setDetails({ type: TYPE.IDEA, dueDate: "", note: "" }); setShowDetails(false);
+      await feishuService.addRecord({ title: inputValue, content: details.note, source: "Mobile", category: details.category.split(" ")[0], type: details.type, dueDate: details.dueDate, status: STATUS.INBOX });
+      setInputValue(""); setDetails({ category: "Inbox", type: "灵感", dueDate: "", note: "" }); setShowDetails(false);
       notify("已记录", "success");
       loadData();
     } catch (error) { notify("发送失败", "error"); } finally { setIsSending(false); }
   };
 
   const handleEditSave = async (id, fields) => {
-    setRecords(records.map(r => r.id === id ? { ...r, fields: { ...r.fields, ...fields } } : r));
     await feishuService.updateRecord(id, fields);
     setEditingItem(null);
     notify("修改已保存", "success");
@@ -609,8 +586,7 @@ const MobileView = ({ onSettings, notify }) => {
   };
 
   const handleDone = async (id) => {
-    setTodayTasks(todayTasks.map(t => t.id === id ? { ...t, fields: { ...t.fields, "状态": STATUS.DONE } } : t));
-    await feishuService.updateRecord(id, { "状态": STATUS.DONE });
+    await feishuService.updateRecord(id, { "状态": "已完成" });
     notify("任务完成", "success");
     loadData();
   };
@@ -624,16 +600,11 @@ const MobileView = ({ onSettings, notify }) => {
         {todayTasks.length > 0 && (
           <div className="mt-6">
             <h2 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3 ml-2 flex items-center gap-2"><Calendar size={12}/> 今日待办</h2>
-            <div className="space-y-2">{todayTasks.map(item => (
-               <div key={item.id} onClick={() => setEditingItem(item)} className={`bg-slate-900 p-4 rounded-xl border flex items-center justify-between active:scale-[0.98] transition-transform ${item.fields["状态"] === STATUS.DONE ? 'border-slate-800 opacity-50' : 'border-slate-700'}`}>
-                 <span className={`text-sm font-medium ${item.fields["状态"] === STATUS.DONE ? 'text-slate-500 line-through' : 'text-slate-200'}`}>{item.fields["标题"]}</span>
-                 <button onClick={(e) => { e.stopPropagation(); handleDone(item.id); }} className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${item.fields["状态"] === STATUS.DONE ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-slate-600 text-transparent hover:border-emerald-500'}`}><Check size={14}/></button>
-               </div>
-            ))}</div>
+            <div className="space-y-2">{todayTasks.map(item => (<div key={item.id} onClick={() => setEditingItem(item)} className="bg-slate-900 p-4 rounded-xl border border-slate-800 flex items-center justify-between active:scale-[0.98] transition-transform"><span className="text-slate-200 text-sm font-medium">{item.fields["标题"]}</span><button onClick={(e) => { e.stopPropagation(); handleDone(item.id); }} className="w-6 h-6 rounded-full border-2 border-slate-600 flex items-center justify-center text-transparent hover:bg-emerald-500 hover:border-emerald-500 hover:text-white"><Check size={14}/></button></div>))}</div>
           </div>
         )}
         <div className="mt-8">
-          <h2 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3 ml-2 flex items-center gap-2"><Inbox size={12}/> 收件箱 / 最近</h2>
+          <h2 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3 ml-2 flex items-center gap-2"><Clock size={12}/> 最近动态 / 收件箱</h2>
           <div className="space-y-3">
             {recentInputs.map(item => (
               <div key={item.id} onClick={() => setEditingItem(item)} className="bg-slate-900 p-4 rounded-xl border border-slate-800 flex justify-between items-start active:scale-[0.98] transition-transform">
@@ -740,10 +711,41 @@ const DesktopView = ({ onLogout, onSettings, notify, isDemoMode, onGoHome }) => 
     await handleAction(async () => { await feishuService.addRecord(data); notify("已保存", "success"); });
   };
 
-  const handleUpdateStatus = (id, status) => handleAction(async () => {
-    await feishuService.updateRecord(id, { "状态": status });
-    notify("状态已更新", "success");
-  });
+  // Today's Task Quick Add
+  const [todayInput, setTodayInput] = useState("");
+  const handleTodayAdd = async (e) => {
+    e.preventDefault();
+    if (!todayInput.trim()) return;
+    
+    const newRec = { id: "t_"+Date.now(), fields: { "标题": todayInput, "状态": STATUS.DOING, "类型": TYPE.TASK, "优先级": PRIORITY.NORMAL, "截止日期": Date.now(), "记录日期": Date.now() } };
+    setRecords([newRec, ...records]); // Optimistic
+    setTodayInput("");
+
+    await handleAction(async () => {
+       await feishuService.addRecord({
+           title: newRec.fields["标题"], status: STATUS.DOING, type: TYPE.TASK, priority: PRIORITY.NORMAL, dueDate: new Date().toISOString().split('T')[0], source: "PC", tags: []
+       });
+       notify("任务已添加至今日", "success");
+    });
+  }
+
+  const handleUpdateStatus = async (id, status) => {
+    // Optimistic Update
+    const updatedRecords = records.map(r => r.id === id ? { ...r, fields: { ...r.fields, "状态": status } } : r);
+    setRecords(updatedRecords);
+    // Update local lists immediately for smooth UI
+    setTodoItems(updatedRecords.filter(r => r.fields["状态"] === STATUS.TODO));
+    setDoingItems(updatedRecords.filter(r => r.fields["状态"] === STATUS.DOING));
+    setDoneItems(updatedRecords.filter(r => r.fields["状态"] === STATUS.DONE));
+    
+    try {
+        await feishuService.updateRecord(id, { "状态": status });
+        notify("状态已更新", "success");
+    } catch (e) {
+        notify("更新失败", "error");
+        loadData(); // Revert
+    }
+  };
 
   const handleEditSave = (id, fields) => handleAction(async () => {
     await feishuService.updateRecord(id, fields);
@@ -751,7 +753,13 @@ const DesktopView = ({ onLogout, onSettings, notify, isDemoMode, onGoHome }) => 
     notify("修改已保存", "success");
   });
 
-  const handleDelete = (id) => { if(confirm("确定删除吗？")) { handleAction(async () => { await feishuService.deleteRecord(id); notify("已删除", "success"); }); } };
+  const handleDelete = (id) => { 
+      if(confirm("确定删除吗？")) { 
+          setInboxItems(inboxItems.filter(i => i.id !== id)); // Optimistic
+          handleAction(async () => { await feishuService.deleteRecord(id); notify("已删除", "success"); }); 
+      } 
+  };
+  
   const toggleAction = (action) => { setDesktopDetails(prev => ({ ...prev, nextActions: prev.nextActions.includes(action) ? prev.nextActions.filter(a => a !== action) : [...prev.nextActions, action] })); };
 
   return (
@@ -813,20 +821,38 @@ const DesktopView = ({ onLogout, onSettings, notify, isDemoMode, onGoHome }) => 
 
                 {/* TODAY'S TASKS (Updated) */}
                 <div className="md:col-span-2 bg-slate-900 border border-slate-800 p-6 rounded-3xl">
-                   <div className="flex items-center gap-2 text-slate-400 text-sm font-bold uppercase tracking-wider mb-4"><Calendar size={14}/> 今日任务</div>
-                   <div className="space-y-2">
-                      {todayTasks.map(item => {
+                   <div className="flex items-center justify-between mb-4">
+                     <div className="flex items-center gap-2 text-slate-400 text-sm font-bold uppercase tracking-wider"><Calendar size={14}/> 今日任务</div>
+                   </div>
+                   <form onSubmit={handleTodayAdd} className="mb-4 relative">
+                      <input 
+                        type="text" 
+                        placeholder="快速添加今日任务 (回车保存)..." 
+                        className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2 text-sm text-slate-200 focus:border-indigo-500 outline-none"
+                        value={todayInput}
+                        onChange={e => setTodayInput(e.target.value)}
+                      />
+                      <button type="submit" disabled={!todayInput.trim()} className="absolute right-2 top-1.5 text-slate-400 hover:text-indigo-400 disabled:opacity-0 transition-all"><Plus size={18}/></button>
+                   </form>
+                   <div className="space-y-2 max-h-[300px] overflow-y-auto custom-scrollbar">
+                      {[...todayTasks, ...completedToday].map(item => {
                         const isDone = item.fields["状态"] === STATUS.DONE;
                         return (
-                          <div key={item.id} onClick={() => setEditingItem(item)} className={`flex items-center gap-3 p-3 rounded-xl border transition-all ${isDone ? 'bg-slate-900 border-slate-800 opacity-50' : 'bg-slate-800 border-slate-700 hover:border-indigo-500/50'} cursor-pointer group`}>
-                             <button onClick={(e) => { e.stopPropagation(); handleUpdateStatus(item.id, isDone ? '待办' : '已完成'); }} className={`w-5 h-5 rounded flex items-center justify-center transition-all ${isDone ? 'bg-emerald-500 text-white' : 'border-2 border-slate-500 hover:border-emerald-500'}`}>
+                          <div key={item.id} onClick={() => setEditingItem(item)} className={`flex items-center gap-3 p-3 rounded-xl border transition-all ${isDone ? 'bg-slate-900 border-slate-800 opacity-60' : 'bg-slate-800 border-slate-700 hover:border-indigo-500/50'} cursor-pointer group`}>
+                             <button onClick={(e) => { e.stopPropagation(); handleUpdateStatus(item.id, isDone ? STATUS.DOING : STATUS.DONE); }} className={`w-5 h-5 rounded flex items-center justify-center transition-all ${isDone ? 'bg-emerald-500 text-white' : 'border-2 border-slate-500 hover:border-emerald-500'}`}>
                                 {isDone && <Check size={12} />}
                              </button>
-                             <span className={`text-sm ${isDone ? 'text-slate-500 line-through' : 'text-slate-200'}`}>{item.fields["标题"]}</span>
+                             <div className="flex-1">
+                                <span className={`text-sm ${isDone ? 'text-slate-500 line-through' : 'text-slate-200'}`}>{item.fields["标题"]}</span>
+                                <div className="flex gap-2 mt-1">
+                                  <span className={`text-[10px] px-1.5 rounded border ${isDone ? 'border-slate-800 text-slate-600' : 'border-slate-600 text-slate-400'}`}>{item.fields["状态"]}</span>
+                                  {item.fields["优先级"] === PRIORITY.HIGH && !isDone && <span className="text-[10px] text-red-400 flex items-center gap-0.5"><Flame size={10}/> 紧急</span>}
+                                </div>
+                             </div>
                           </div>
                         );
                       })}
-                      {todayTasks.length + completedToday.length === 0 && <div className="text-slate-600 text-sm text-center py-8">今日无待办任务</div>}
+                      {todayTasks.length + completedToday.length === 0 && <div className="text-slate-600 text-sm text-center py-4">今日无待办任务</div>}
                    </div>
                 </div>
 
