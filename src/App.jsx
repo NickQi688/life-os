@@ -22,6 +22,9 @@ const STATUS = { INBOX: "收件箱", TODO: "待办", DOING: "进行中", DONE: "
 const TYPE = { IDEA: "灵感", TASK: "任务", NOTE: "笔记", JOURNAL: "日记" };
 const PRIORITY = { HIGH: "紧急", NORMAL: "普通", LOW: "不急" };
 
+// 全局统一的内容方向配置
+const CONTENT_DIRECTIONS = ["AI", "提效工具", "个人成长", "投资", "新媒体", "创业", "工作", "金句", "生活", "学习", "其他"];
+
 /**
  * --- UTILS ---
  */
@@ -58,7 +61,7 @@ const getTypeIcon = (type) => {
   }
 };
 
-// 获取本地日期字符串 (YYYY-MM-DD)，解决时区导致的日期滞后问题
+// 获取本地日期字符串 (YYYY-MM-DD)
 const getLocalDateString = () => {
   const now = new Date();
   const offset = now.getTimezoneOffset() * 60000;
@@ -70,7 +73,7 @@ const getLocalDateString = () => {
  * --- UTILS: MOCK DATA ---
  */
 const MOCK_DATA = [
-  { id: '101', fields: { "标题": "👋 欢迎使用 LifeOS！", "内容": "点击卡片编辑详情。", "状态": STATUS.INBOX, "类型": TYPE.IDEA, "优先级": PRIORITY.NORMAL, "内容方向": "灵感", "来源": "PC", "记录日期": Date.now() } },
+  { id: '101', fields: { "标题": "👋 欢迎使用 LifeOS！", "内容": "点击卡片编辑详情。", "状态": STATUS.INBOX, "类型": TYPE.IDEA, "优先级": PRIORITY.NORMAL, "内容方向": "个人成长", "来源": "PC", "记录日期": Date.now() } },
   { id: '102', fields: { "标题": "🔥 今日紧急任务", "状态": STATUS.TODO, "类型": TYPE.TASK, "优先级": PRIORITY.HIGH, "内容方向": "提效工具", "来源": "PC", "截止日期": Date.now(), "标签": ["工作"], "记录日期": Date.now() - 100000 } },
   { id: '103', fields: { "标题": "正在进行的任务", "状态": STATUS.DOING, "类型": TYPE.TASK, "优先级": PRIORITY.NORMAL, "内容方向": "提效工具", "来源": "PC", "截止日期": Date.now(), "记录日期": Date.now() - 200000 } },
   { id: '104', fields: { "标题": "已完成的任务", "状态": STATUS.DONE, "类型": TYPE.TASK, "优先级": PRIORITY.NORMAL, "内容方向": "个人成长", "来源": "Mobile", "截止日期": Date.now(), "记录日期": Date.now() - 300000 } },
@@ -93,7 +96,7 @@ class DeepSeekService {
     const apiKey = this.getKey();
     if (!apiKey) throw new Error("请先在设置中配置 DeepSeek API Key");
 
-    let systemPrompt = "你是一个高效的个人知识管理助手。";
+    let systemPrompt = "你是一个高效的个人知识管理助手。用户会输入一段原始文本。";
     if (type === TYPE.TASK) systemPrompt += "用户输入了一个任务。请帮我完善它，使其具体可执行。如果内容模糊，请拆解为子步骤。";
     else if (type === TYPE.IDEA) systemPrompt += "用户输入了一个灵感。请帮我拓展思路，给出 1-2 个相关的延伸思考或应用场景。";
     else if (type === TYPE.JOURNAL) systemPrompt += "用户输入了一段日记。请帮我润色文字，使其更具表达力，并尝试提取某种情绪或洞察。";
@@ -175,6 +178,8 @@ class FeishuService {
       await new Promise(resolve => setTimeout(resolve, 300)); 
       if (endpoint.includes('tenant_access_token')) return { tenant_access_token: 'mock_token' };
       if (endpoint.includes('/records') && method === 'GET') return { items: MOCK_DATA };
+      // [NEW] Mocking fields request for preview
+      if (endpoint.includes('/fields')) return { items: [{ field_name: "内容方向", property: { options: CONTENT_DIRECTIONS.map(name => ({ name })) } }] };
       return { code: 0, msg: "success", data: {} };
     }
 
@@ -247,7 +252,7 @@ class FeishuService {
       "状态": data.status || STATUS.INBOX, 
       "类型": data.type || TYPE.IDEA,  
       "优先级": data.priority || PRIORITY.NORMAL,
-      "内容方向": data.direction || "个人成长",
+      "内容方向": data.direction || "个人成长", // [UPDATED] Default changed to 个人成长
       "记录日期": Date.now() 
     };
     if (data.nextActions && data.nextActions.length > 0) fields["下一步"] = data.nextActions;
@@ -373,9 +378,8 @@ const FocusModeOverlay = ({ task, onClose }) => {
   );
 };
 
-const EditRecordModal = ({ isOpen, record, onClose, onSave }) => {
+const EditRecordModal = ({ isOpen, record, onClose, onSave, directions }) => {
   const [formData, setFormData] = useState({});
-  const directions = ["投资", "AI", "提效工具", "个人成长", "自媒体", "创业", "工作", "生活", "学习", "其他",];
   const actionsList = ["学习", "整理", "收藏使用", "分享", "待办"];
 
   useEffect(() => {
@@ -442,15 +446,31 @@ const QuickCaptureModal = ({ isOpen, onClose, onSave }) => {
   const [text, setText] = useState("");
   const [type, setType] = useState(TYPE.IDEA);
   const [isSending, setIsSending] = useState(false);
+  const [note, setNote] = useState(""); 
+  const [isAiLoading, setIsAiLoading] = useState(false);
   const inputRef = useRef(null);
 
   useEffect(() => { if (isOpen && inputRef.current) setTimeout(() => inputRef.current.focus(), 100); }, [isOpen]);
 
+  const handleAiOptimize = async () => {
+    if (!text.trim()) return;
+    setIsAiLoading(true);
+    try {
+      const result = await aiService.optimize(text, type);
+      setText(result.title); // 更新标题
+      setNote(result.content); // 更新备注
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsAiLoading(false);
+    }
+  };
+
   const handleSubmit = async () => {
     if (!text.trim()) return;
     setIsSending(true);
-    await onSave({ title: text, type, status: type === TYPE.TASK ? STATUS.INBOX : STATUS.DONE, source: "QuickCapture" });
-    setIsSending(false); setText(""); onClose();
+    await onSave({ title: text, content: note, type, status: type === TYPE.TASK ? STATUS.INBOX : STATUS.DONE, source: "QuickCapture" });
+    setIsSending(false); setText(""); setNote(""); onClose();
   };
 
   if (!isOpen) return null;
@@ -459,14 +479,35 @@ const QuickCaptureModal = ({ isOpen, onClose, onSave }) => {
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-sm transition-opacity" onClick={onClose} />
       <div className="relative bg-slate-900 border border-slate-700/50 rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden animate-scale-in">
-        <div className="p-1">
-          <textarea ref={inputRef} value={text} onChange={e => setText(e.target.value)} onKeyDown={e => { if(e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSubmit(); }} placeholder="有什么想法？(Cmd/Ctrl + Enter 发送)" className="w-full h-32 bg-transparent text-lg text-slate-200 p-4 placeholder-slate-600 outline-none resize-none" />
+        <div className="p-4 space-y-3">
+          <input 
+             ref={inputRef}
+             value={text} 
+             onChange={e => setText(e.target.value)} 
+             onKeyDown={e => { if(e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSubmit(); }} 
+             placeholder="有什么想法？(Cmd+Enter 发送)" 
+             className="w-full bg-transparent text-lg text-slate-200 placeholder-slate-600 outline-none" 
+          />
+          <textarea 
+             value={note}
+             onChange={e => setNote(e.target.value)}
+             placeholder="添加备注..."
+             className="w-full bg-slate-800/50 rounded-lg p-2 text-sm text-slate-300 placeholder-slate-600 outline-none resize-none h-20"
+          />
         </div>
         <div className="px-4 py-3 bg-slate-800/50 flex justify-between items-center border-t border-slate-700/50">
-          <div className="flex gap-2">
-            {[ { id: TYPE.IDEA, icon: Lightbulb, label: '灵感' }, { id: TYPE.TASK, icon: CheckSquare, label: '任务' }, { id: TYPE.NOTE, icon: FileText, label: '笔记' }, { id: TYPE.JOURNAL, icon: Book, label: '日记' }, ].map(t => (
-              <button key={t.id} onClick={() => setType(t.id)} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${type === t.id ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30' : 'text-slate-400 hover:bg-slate-700 hover:text-slate-200'}`}> <t.icon size={14} /> {t.label} </button>
+          <div className="flex items-center gap-2">
+            {[ { id: TYPE.IDEA, icon: Lightbulb }, { id: TYPE.TASK, icon: CheckSquare }, { id: TYPE.NOTE, icon: FileText }, { id: TYPE.JOURNAL, icon: Book } ].map(t => (
+              <button key={t.id} onClick={() => setType(t.id)} className={`p-2 rounded-lg transition-all ${type === t.id ? 'bg-indigo-500/20 text-indigo-300' : 'text-slate-400 hover:bg-slate-700'}`}> <t.icon size={16} /> </button>
             ))}
+            <button 
+                onClick={handleAiOptimize}
+                disabled={isAiLoading || !text.trim()}
+                className="p-2 rounded-lg text-indigo-400 hover:bg-indigo-500/10 transition-all ml-2"
+                title="AI 优化"
+            >
+                {isAiLoading ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
+            </button>
           </div>
           <button onClick={handleSubmit} disabled={!text.trim() || isSending} className="p-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-colors disabled:opacity-50">{isSending ? <Loader2 size={20} className="animate-spin" /> : <ArrowRight size={20} />}</button>
         </div>
@@ -512,7 +553,7 @@ const KanbanCard = ({ item, onMove, onClick }) => (
 const WelcomeScreen = ({ onStart }) => (
   <div className="min-h-screen bg-slate-950 text-slate-200 font-sans">
     <nav className="flex items-center justify-between px-6 py-6 max-w-7xl mx-auto border-b border-slate-800/50"><Logo /><button onClick={onStart} className="px-4 py-2 text-sm font-bold text-slate-300 bg-slate-800/50 border border-slate-700 rounded-lg hover:bg-slate-700 hover:text-white transition-all">开启体验 / 登录</button></nav>
-    <div className="max-w-4xl mx-auto px-6 pt-20 pb-20 text-center animate-fade-in-up"><div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/10 text-indigo-400 text-xs font-bold uppercase tracking-wider mb-6 border border-indigo-500/20">v3.1 AI Enhanced</div><h1 className="text-5xl md:text-7xl font-extrabold text-white tracking-tight mb-8 leading-tight">掌控你的 <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400">数字人生</span></h1><p className="text-xl md:text-2xl text-slate-400 mb-10 max-w-2xl mx-auto leading-relaxed">AI 驱动的极速录入 · 深度管理任务 · 数据完全私有</p><button onClick={onStart} className="group relative inline-flex items-center justify-center px-8 py-4 font-bold text-white transition-all duration-200 bg-indigo-600 rounded-full hover:bg-indigo-500 hover:shadow-lg hover:shadow-indigo-500/25 hover:-translate-y-1">开启 LifeOS <ArrowRight className="ml-2 w-5 h-5 group-hover:translate-x-1 transition-transform" /></button></div>
+    <div className="max-w-4xl mx-auto px-6 pt-20 pb-20 text-center animate-fade-in-up"><div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/10 text-indigo-400 text-xs font-bold uppercase tracking-wider mb-6 border border-indigo-500/20">v3.3 AI Enhanced</div><h1 className="text-5xl md:text-7xl font-extrabold text-white tracking-tight mb-8 leading-tight">掌控你的 <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400">数字人生</span></h1><p className="text-xl md:text-2xl text-slate-400 mb-10 max-w-2xl mx-auto leading-relaxed">AI 驱动的极速录入 · 深度管理任务 · 数据完全私有</p><button onClick={onStart} className="group relative inline-flex items-center justify-center px-8 py-4 font-bold text-white transition-all duration-200 bg-indigo-600 rounded-full hover:bg-indigo-500 hover:shadow-lg hover:shadow-indigo-500/25 hover:-translate-y-1">开启 LifeOS <ArrowRight className="ml-2 w-5 h-5 group-hover:translate-x-1 transition-transform" /></button></div>
     <div className="bg-slate-900/50 py-24 border-y border-slate-800/50"><div className="max-w-7xl mx-auto px-6"><div className="grid md:grid-cols-3 gap-8"><FeatureCard icon={<Smartphone size={24} />} color="text-blue-400 bg-blue-400/10" title="极速捕获" desc="专为手机设计的输入界面，随时随地记录灵感。" /><FeatureCard icon={<Shield size={24} />} color="text-emerald-400 bg-emerald-400/10" title="数据隐私" desc="BYOK 架构。数据直连飞书，密钥本地存储，不经过第三方服务器。" /><FeatureCard icon={<Activity size={24} />} color="text-purple-400 bg-purple-400/10" title="GTD 工作流" desc="内置收件箱、下一步行动、优先级管理，让一切井井有条。" /></div></div></div>
     <div className="py-24"><div className="max-w-6xl mx-auto px-6"><div className="text-center mb-16"><h2 className="text-3xl font-bold text-white mb-4">只需三步，即刻开启</h2><p className="text-slate-500">连接飞书，无需复杂的服务器配置。</p></div><div className="grid md:grid-cols-3 gap-8 relative"><div className="hidden md:block absolute top-10 left-0 w-full h-0.5 bg-slate-800 -z-10"></div><StepCard icon={Table} title="复制标准模版" desc="点击右下角按钮，将标准表格模版复制到你的飞书。" /><StepCard icon={Key} title="获取 API 密钥" desc="复制浏览器地址栏的 Base ID 和 Table ID。" /><StepCard icon={Rocket} title="开始使用" desc="填入配置，立即连接你的私人数据库。" /></div></div></div>
     <footer className="bg-slate-950 border-t border-slate-800 text-slate-500 py-12 text-center text-sm"><div className="max-w-2xl mx-auto px-4"><div className="flex flex-wrap justify-center gap-6 font-medium mb-8 text-slate-400"><div className="flex items-center gap-2"><User size={14} /><span>作者：小鲸</span></div><div className="flex items-center gap-2"><Mail size={14} /><span>1584897236@qq.com</span></div><div className="flex items-center gap-2"><MessageCircle size={14} /><span>微信：zhaoqi3210</span></div><a href="https://www.xiaojingfy.com" target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 hover:text-indigo-400 transition-colors"><Globe size={14} /><span>www.xiaojingfy.com</span></a></div><p className="opacity-50 text-xs">© 2025 LifeOS. Designed for productivity.</p></div></footer>
@@ -556,7 +597,7 @@ const SettingsScreen = ({ onSave, onCancel, initialConfig, notify, onLogout }) =
   );
 };
 
-const MobileView = ({ onSettings, notify }) => {
+const MobileView = ({ onSettings, notify, directions }) => {
   // 1. Single Source of Truth
   const [records, setRecords] = useState([]);
   const [editingItem, setEditingItem] = useState(null);
@@ -728,7 +769,7 @@ const MobileView = ({ onSettings, notify }) => {
   return (
     <div className="flex flex-col h-screen bg-slate-950 text-slate-200">
       <div className="px-6 pt-12 pb-4 flex justify-between items-center bg-slate-900/50 backdrop-blur-md sticky top-0 z-10 border-b border-white/5"><Logo className="w-6 h-6" textSize="text-lg" /><button onClick={onSettings} className="p-2 text-slate-400 hover:text-white"><Settings size={20} /></button></div>
-      {editingItem && <EditRecordModal isOpen={true} record={editingItem} onClose={() => setEditingItem(null)} onSave={handleEditSave} />}
+      {editingItem && <EditRecordModal isOpen={true} record={editingItem} onClose={() => setEditingItem(null)} onSave={handleEditSave} directions={directions} />}
       
       <div className="flex-1 overflow-y-auto px-4 pb-48 custom-scrollbar">
         {/* Mobile Today Tasks */}
@@ -772,7 +813,7 @@ const MobileView = ({ onSettings, notify }) => {
         </div>
       </div>
       
-      {/* Mobile Bottom Bar (Refactored: Removed Categories, Only Types & Date) */}
+      {/* Mobile Bottom Bar */}
       <div className={`fixed bottom-0 left-0 w-full bg-slate-900/90 backdrop-blur-xl border-t border-white/10 pb-safe-area shadow-[0_-10px_40px_rgba(0,0,0,0.5)] transition-all duration-300 ${showDetails ? 'rounded-t-3xl' : ''} z-20`}>
         <div className="p-4">
           {showDetails && (
@@ -806,7 +847,7 @@ const MobileView = ({ onSettings, notify }) => {
   );
 };
 
-const DesktopView = ({ onLogout, onSettings, notify, isDemoMode, onGoHome }) => {
+const DesktopView = ({ onLogout, onSettings, notify, isDemoMode, onGoHome, directions }) => {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [records, setRecords] = useState([]);
   const [inboxItems, setInboxItems] = useState([]);
@@ -823,6 +864,7 @@ const DesktopView = ({ onLogout, onSettings, notify, isDemoMode, onGoHome }) => 
   const [quickInput, setQuickInput] = useState("");
   const [isQuickAdding, setIsQuickAdding] = useState(false);
   const [inputExpanded, setInputExpanded] = useState(false);
+  // [UPDATED] Desktop Inbox Input: Added TYPE field to state
   const [desktopDetails, setDesktopDetails] = useState({ type: TYPE.IDEA, priority: "普通", direction: "灵感", infoSource: "其他", nextActions: [], dueDate: "", note: "" });
   const inputRef = useRef(null);
   
@@ -841,7 +883,6 @@ const DesktopView = ({ onLogout, onSettings, notify, isDemoMode, onGoHome }) => 
   const todayTasks = records.filter(r => r.fields["类型"] === '任务' && r.fields["状态"] !== '已完成' && r.fields["截止日期"] && new Date(r.fields["截止日期"]).toDateString() === new Date(todayStr).toDateString());
   const completedToday = records.filter(r => r.fields["状态"] === '已完成' && r.fields["截止日期"] && new Date(r.fields["截止日期"]).toDateString() === new Date(todayStr).toDateString());
 
-  const directions = ["灵感", "AI", "提效工具", "个人成长", "自媒体", "日记"];
   const sources = ["推特", "微信群", "公众号", "即刻", "小红书", "Youtube", "其他"];
   const actions = ["学习", "整理", "收藏使用", "分享", "待办"];
 
@@ -954,10 +995,43 @@ const DesktopView = ({ onLogout, onSettings, notify, isDemoMode, onGoHome }) => 
       .sort((a, b) => new Date(b.fields["记录日期"]) - new Date(a.fields["记录日期"]))
       .slice(0, 5);
 
+  // [NEW] Desktop Today's Task Quick Add
+  const [todayInput, setTodayInput] = useState("");
+  const handleTodayAdd = async (e) => {
+    e.preventDefault();
+    if (!todayInput.trim()) return;
+    
+    // 乐观更新
+    const now = Date.now();
+    const localDate = getLocalDateString();
+    
+    // Optimistic Update
+    const newRec = { 
+        id: "t_"+Date.now(), 
+        fields: { 
+            "标题": todayInput, 
+            "状态": STATUS.DOING, 
+            "类型": TYPE.TASK, 
+            "优先级": PRIORITY.NORMAL, 
+            "截止日期": new Date(localDate).getTime(), 
+            "记录日期": now 
+        } 
+    };
+    setRecords([newRec, ...records]); 
+    setTodayInput("");
+
+    await handleAction(async () => {
+       await feishuService.addRecord({
+           title: newRec.fields["标题"], status: STATUS.DOING, type: TYPE.TASK, priority: PRIORITY.NORMAL, dueDate: localDate, source: "PC", tags: []
+       });
+       notify("任务已添加至今日", "success");
+    });
+  }
+
   return (
     <div className="flex h-screen bg-slate-950 text-slate-200 font-sans overflow-hidden">
       <QuickCaptureModal isOpen={isQuickCaptureOpen} onClose={() => setIsQuickCaptureOpen(false)} onSave={handleQuickSave} />
-      {editingItem && <EditRecordModal isOpen={true} record={editingItem} onClose={() => setEditingItem(null)} onSave={handleEditSave} />}
+      {editingItem && <EditRecordModal isOpen={true} record={editingItem} onClose={() => setEditingItem(null)} onSave={handleEditSave} directions={directions} />}
       {showFocusOverlay && <FocusModeOverlay task={focusTask} onClose={() => setShowFocusOverlay(false)} />}
       
       <aside className="w-64 bg-slate-900 border-r border-slate-800 flex flex-col shrink-0 z-20">
@@ -1014,8 +1088,25 @@ const DesktopView = ({ onLogout, onSettings, notify, isDemoMode, onGoHome }) => 
 
                 {/* TODAY'S TASKS (Updated) */}
                 <div className="md:col-span-2 bg-slate-900 border border-slate-800 p-6 rounded-3xl">
-                   <div className="flex items-center gap-2 text-slate-400 text-sm font-bold uppercase tracking-wider mb-4"><Calendar size={14}/> 今日任务</div>
-                   <div className="space-y-2">
+                   <div className="flex items-center justify-between mb-4">
+                     <div className="flex items-center gap-2 text-slate-400 text-sm font-bold uppercase tracking-wider"><Calendar size={14}/> 今日任务</div>
+                     <div className="text-xs text-slate-500 flex items-center gap-1"><span className="w-2 h-2 bg-indigo-500 rounded-full"></span> {todayTasks.length} 个任务</div>
+                   </div>
+                   
+                   {/* [NEW] Desktop Today's Task Input */}
+                   <form onSubmit={handleTodayAdd} className="mb-4 relative group">
+                      <input 
+                        type="text" 
+                        placeholder="快速添加今日任务 (回车保存)..." 
+                        className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-200 focus:border-indigo-500 outline-none transition-all pl-10"
+                        value={todayInput}
+                        onChange={e => setTodayInput(e.target.value)}
+                      />
+                      <Plus size={16} className="absolute left-3 top-3 text-slate-500 group-hover:text-indigo-400 transition-colors" />
+                      <button type="submit" disabled={!todayInput.trim()} className="absolute right-2 top-1.5 p-1 text-slate-400 hover:text-indigo-400 disabled:opacity-0 transition-all"><ArrowRight size={16}/></button>
+                   </form>
+
+                   <div className="space-y-2 max-h-[300px] overflow-y-auto custom-scrollbar">
                       {[...todayTasks, ...completedToday].map(item => {
                         const isDone = item.fields["状态"] === STATUS.DONE;
                         return (
@@ -1023,14 +1114,14 @@ const DesktopView = ({ onLogout, onSettings, notify, isDemoMode, onGoHome }) => 
                              <button onClick={(e) => { e.stopPropagation(); handleUpdateStatus(item.id, isDone ? '待办' : '已完成'); }} className={`w-5 h-5 rounded flex items-center justify-center transition-all ${isDone ? 'bg-emerald-500 text-white' : 'border-2 border-slate-500 hover:border-emerald-500'}`}>
                                 {isDone && <Check size={12} />}
                              </button>
-                             <div className="flex-1" onClick={() => setEditingItem(item)}>
+                             <div className="flex-1">
                                 <span className={`text-sm ${isDone ? 'text-slate-500 line-through' : 'text-slate-200'}`}>{item.fields["标题"]}</span>
                                 <div className="flex gap-2 mt-1">
                                   <span className={`text-[10px] px-1.5 rounded border ${isDone ? 'border-slate-800 text-slate-600' : 'border-slate-600 text-slate-400'}`}>{item.fields["状态"]}</span>
                                   {item.fields["优先级"] === PRIORITY.HIGH && !isDone && <span className="text-[10px] text-red-400 flex items-center gap-0.5"><Flame size={10}/> 紧急</span>}
                                 </div>
                              </div>
-                             {/* [NEW] Focus Button */}
+                             {/* Focus Button */}
                              {!isDone && (
                                <button 
                                  onClick={(e) => { e.stopPropagation(); setFocusTask(item.fields["标题"]); setShowFocusOverlay(true); }}
@@ -1094,7 +1185,7 @@ const DesktopView = ({ onLogout, onSettings, notify, isDemoMode, onGoHome }) => 
                           <select className="bg-slate-800 border border-slate-700 text-xs text-slate-300 px-2 py-1.5 rounded-lg" value={desktopDetails.type} onChange={e => setDesktopDetails({...desktopDetails, type: e.target.value})}>
                              {[TYPE.IDEA, TYPE.TASK, TYPE.NOTE, TYPE.JOURNAL].map(t => <option key={t} value={t}>{t}</option>)}
                           </select>
-                          <select className="bg-slate-800 border border-slate-700 text-xs text-slate-300 px-2 py-1.5 rounded-lg" value={desktopDetails.direction} onChange={e => setDesktopDetails({...desktopDetails, direction: e.target.value})}>{directions.map(d => <option key={d} value={d}>{d}</option>)}</select>
+                          <select className="bg-slate-800 border border-slate-700 text-xs text-slate-300 px-2 py-1.5 rounded-lg" value={desktopDetails.direction} onChange={e => setDesktopDetails({...desktopDetails, direction: e.target.value})}>{CONTENT_DIRECTIONS.map(d => <option key={d} value={d}>{d}</option>)}</select>
                         </div>
                         <div className="flex flex-wrap gap-2">{actions.map(action => (<button key={action} type="button" onClick={() => toggleAction(action)} className={`px-2 py-1 rounded border text-[10px] flex items-center gap-1 transition-colors ${desktopDetails.nextActions.includes(action) ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-300' : 'bg-slate-900 border-slate-700 text-slate-500 hover:border-slate-600'}`}>{desktopDetails.nextActions.includes(action) && <Check size={8} />} {action}</button>))}</div>
                         <div className="flex justify-between items-center pt-2"><button type="submit" disabled={!quickInput.trim() || isQuickAdding} className="bg-indigo-600 text-white px-6 py-1.5 rounded-lg text-sm font-bold hover:bg-indigo-500 disabled:opacity-50 transition-colors">{isQuickAdding ? '保存中...' : '保存'}</button></div>
@@ -1181,6 +1272,9 @@ export default function App() {
   const [showWelcome, setShowWelcome] = useState(() => !feishuService.getConfig());
   const [isMobile, setIsMobile] = useState(false);
   const [notification, setNotification] = useState(null);
+  
+  // Directions state now uses the constant directly
+  const directions = CONTENT_DIRECTIONS;
 
   useEffect(() => {
     const checkMobile = () => setIsMobile(window.innerWidth < 768);
@@ -1201,9 +1295,9 @@ export default function App() {
       ) : isConfiguring ? (
         <SettingsScreen onSave={handleSaveConfig} notify={notify} onCancel={handleCancelConfig} initialConfig={config} onLogout={handleLogout} />
       ) : isMobile ? (
-        <MobileView onSettings={() => setIsConfiguring(true)} notify={notify} />
+        <MobileView onSettings={() => setIsConfiguring(true)} notify={notify} directions={directions} />
       ) : (
-        <DesktopView onLogout={handleLogout} onSettings={() => setIsConfiguring(true)} notify={notify} isDemoMode={isDemoMode} onGoHome={() => setShowWelcome(true)} />
+        <DesktopView onLogout={handleLogout} onSettings={() => setIsConfiguring(true)} notify={notify} isDemoMode={isDemoMode} onGoHome={() => setShowWelcome(true)} directions={directions} />
       )}
     </>
   );
