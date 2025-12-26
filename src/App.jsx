@@ -20,11 +20,10 @@ const TUTORIAL_URL = "https://ai.feishu.cn/docx/SaxxdrgJkoACzUx2LOBcLknqnQf";
  * --- UTILS: MOCK DATA ---
  */
 const MOCK_DATA = [
-  { id: '101', fields: { "标题": "👋 欢迎使用 LifeOS！(点击我编辑)", "内容": "这是一个演示条目。点击卡片可以打开详情页，修改优先级、分类等信息。", "状态": "Inbox", "分类": "Inbox", "类型": "灵感", "优先级": "普通", "记录日期": Date.now() } },
-  { id: '102', fields: { "标题": "🔥 完成今日紧急任务", "状态": "Todo", "分类": "Work", "类型": "任务", "优先级": "紧急", "截止日期": Date.now(), "记录日期": Date.now() - 100000 } },
-  { id: '103', fields: { "标题": "研究 Next.js 14", "状态": "Doing", "分类": "Work", "类型": "任务", "优先级": "普通", "记录日期": Date.now() - 200000 } },
-  { id: '104', fields: { "标题": "已完成的任务示例", "状态": "Done", "分类": "Life", "类型": "任务", "优先级": "普通", "截止日期": Date.now(), "记录日期": Date.now() - 300000 } },
-  { id: '105', fields: { "标题": "关于效率工具的思考", "内容": "工具只是手段，目的是...", "状态": "Done", "分类": "Thinking", "类型": "笔记", "标签": ["PKM"], "记录日期": Date.now() - 400000 } },
+  { id: '101', fields: { "标题": "👋 欢迎使用 LifeOS！(点击我编辑)", "内容": "这是一个演示条目。", "状态": "收件箱", "分类": "收件箱", "类型": "灵感", "优先级": "普通", "记录日期": Date.now() } },
+  { id: '102', fields: { "标题": "🔥 完成今日紧急任务", "状态": "待办", "分类": "工作", "类型": "任务", "优先级": "紧急", "截止日期": Date.now(), "记录日期": Date.now() - 100000 } },
+  { id: '103', fields: { "标题": "研究 Next.js 14", "状态": "进行中", "分类": "工作", "类型": "任务", "优先级": "普通", "记录日期": Date.now() - 200000 } },
+  { id: '104', fields: { "标题": "已完成的任务示例", "状态": "已完成", "分类": "生活", "类型": "任务", "优先级": "普通", "截止日期": Date.now(), "记录日期": Date.now() - 300000 } },
 ];
 
 /**
@@ -35,13 +34,6 @@ class FeishuService {
     this.STORAGE_KEY = 'lifeos_feishu_config';
     this.API_BASE = '/api/feishu'; 
     this.isPreview = typeof window !== 'undefined' && window.location.protocol === 'blob:';
-    
-    // 定义核心字段列表，用于错误提示
-    this.REQUIRED_FIELDS = [
-      "标题", "内容", "状态", "类型", "优先级", "分类", 
-      "内容方向", "信息来源", "设备来源", "标签", "下一步", 
-      "截止日期", "记录日期"
-    ];
   }
 
   getConfig() { 
@@ -85,16 +77,8 @@ class FeishuService {
       }
 
       const result = await response.json();
-      
-      // [FIX] 针对 FieldNameNotFound (1254045) 进行特殊错误提示
-      if (result.code === 1254045) {
-        throw new Error(`字段名不匹配！请检查飞书表格列名是否包含以下所有字段：\n${this.REQUIRED_FIELDS.join('、')}`);
-      }
-      
       if (result.code !== 0) throw new Error(`Feishu API Error [${result.code}]: ${result.msg}`);
-      
       return result.data || result;
-      
     } catch (error) { 
         console.error("API Request Failed:", error); 
         throw error; 
@@ -108,15 +92,14 @@ class FeishuService {
 
   async fetchRecords() {
     const config = this.getConfig();
-    if (!config) return MOCK_DATA; 
+    if (!config) return MOCK_DATA;
     try {
       const token = await this.getTenantAccessToken(config.appId, config.appSecret);
       if (!token) return MOCK_DATA;
-      // 增加 sort 参数确保最新日期在前
       const data = await this.request(`/bitable/v1/apps/${config.appToken}/tables/${config.tableId}/records?page_size=500&sort=["记录日期 DESC"]`, 'GET', null, token);
       return data ? data.items : [];
     } catch (e) { 
-      console.warn("Fetch records failed, falling back to mock data:", e);
+      console.warn("Fetch records failed, using mock data:", e);
       return MOCK_DATA; 
     }
   }
@@ -136,14 +119,15 @@ class FeishuService {
     const smartTitle = firstLine.length > 40 ? firstLine.substring(0, 40) + "..." : firstLine;
     const fullContent = rawInput + (data.content ? `\n\n【备注】\n${data.content}` : "");
 
+    // [UPDATED] 使用全中文选项
     const fields = {
       "标题": smartTitle || "无标题记录", 
       "内容": fullContent, 
-      "设备来源": data.deviceSource || "PC", 
-      "状态": data.status || "Inbox", 
+      "来源": data.source || "PC", 
+      "状态": data.status || "收件箱", 
       "类型": data.type || "灵感",  
       "优先级": data.priority || "普通",
-      "分类": data.category || "Inbox", 
+      "分类": data.category || "收件箱", 
       "内容方向": data.direction || "灵感",
       "信息来源": data.infoSource || "其他", 
       "记录日期": Date.now() 
@@ -165,34 +149,24 @@ class FeishuService {
     return await this.request(`/bitable/v1/apps/${config.appToken}/tables/${config.tableId}/records/${recordId}`, 'DELETE', null, token);
   }
 
-  // --- 自动建表 ---
   async createTable(appId, appSecret, appToken) {
-    console.log("🚀 开始自动创建飞书表格...");
     const token = await this.getTenantAccessToken(appId, appSecret);
-
-    // [FIX] 使用时间戳作为后缀，避免 1254013 (TableNameDuplicated) 错误
     const tableName = `LifeOS_${Date.now()}`;
-    const tableRes = await this.request(`/bitable/v1/apps/${appToken}/tables`, 'POST', {
-      table: { name: tableName }
-    }, token);
+    const tableRes = await this.request(`/bitable/v1/apps/${appToken}/tables`, 'POST', { table: { name: tableName } }, token);
 
-    if (!tableRes || !tableRes.table_id) {
-        throw new Error("创建表格失败，未返回 Table ID。请检查 Base ID 是否正确，或是否拥有编辑权限。");
-    }
+    if (!tableRes || !tableRes.table_id) throw new Error("创建表格失败，未返回 Table ID。");
 
     const tableId = tableRes.table_id;
-    console.log(`✅ 表格创建成功: ${tableId}`);
-
     const fieldsRes = await this.request(`/bitable/v1/apps/${appToken}/tables/${tableId}/fields`, 'GET', null, token);
     const primaryFieldId = fieldsRes.items[0].field_id;
     await this.request(`/bitable/v1/apps/${appToken}/tables/${tableId}/fields/${primaryFieldId}`, 'PUT', { field_name: "标题" }, token);
 
+    // [UPDATED] 这里的选项必须和上面 addRecord 以及用户手动建表保持一致
     const fieldsToCreate = [
       { field_name: "内容", type: 1 },
-      { field_name: "状态", type: 3, property: { options: [{ name: "Inbox" }, { name: "Todo" }, { name: "Doing" }, { name: "Done" }] } },
+      { field_name: "状态", type: 3, property: { options: [{ name: "收件箱" }, { name: "待办" }, { name: "进行中" }, { name: "已完成" }] } },
       { field_name: "来源", type: 3, property: { options: [{ name: "Mobile" }, { name: "PC" }] } },
-      { field_name: "设备来源", type: 3, property: { options: [{ name: "Mobile" }, { name: "PC" }] } }, // 补充缺失字段
-      { field_name: "分类", type: 3, property: { options: [{ name: "Inbox" }, { name: "Work" }, { name: "Life" }, { name: "Idea" }, { name: "Reading" }] } },
+      { field_name: "分类", type: 3, property: { options: [{ name: "收件箱" }, { name: "工作" }, { name: "生活" }, { name: "灵感" }, { name: "阅读" }] } },
       { field_name: "标签", type: 4 },
       { field_name: "类型", type: 3, property: { options: [{ name: "灵感" }, { name: "任务" }, { name: "笔记" }, { name: "日记" }] } },
       { field_name: "优先级", type: 3, property: { options: [{ name: "紧急" }, { name: "普通" }, { name: "不急" }] } },
@@ -255,10 +229,10 @@ const EditRecordModal = ({ isOpen, record, onClose, onSave }) => {
       setFormData({
         "标题": record.fields["标题"] || "",
         "内容": record.fields["内容"] || "",
-        "状态": record.fields["状态"] || "Inbox",
+        "状态": record.fields["状态"] || "收件箱",
         "类型": record.fields["类型"] || "灵感", 
         "优先级": record.fields["优先级"] || "普通",
-        "分类": record.fields["分类"] || "Inbox",
+        "分类": record.fields["分类"] || "收件箱",
         "内容方向": record.fields["内容方向"] || "灵感",
         "信息来源": record.fields["信息来源"] || "其他",
         "下一步": record.fields["下一步"] || [],
@@ -300,8 +274,8 @@ const EditRecordModal = ({ isOpen, record, onClose, onSave }) => {
         <div className="grid grid-cols-2 gap-4">
            <div>
               <label className="text-xs font-bold text-slate-500 uppercase block mb-1">状态</label>
-              <select className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-slate-300 outline-none" value={formData["状态"] || "Inbox"} onChange={e => setFormData({...formData, "状态": e.target.value})}>
-                 {['Inbox', 'Todo', 'Doing', 'Done'].map(o => <option key={o} value={o}>{o}</option>)}
+              <select className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-slate-300 outline-none" value={formData["状态"] || "收件箱"} onChange={e => setFormData({...formData, "状态": e.target.value})}>
+                 {['收件箱', '待办', '进行中', '已完成'].map(o => <option key={o} value={o}>{o}</option>)}
               </select>
            </div>
            <div>
@@ -358,7 +332,7 @@ const QuickCaptureModal = ({ isOpen, onClose, onSave }) => {
   const handleSubmit = async () => {
     if (!text.trim()) return;
     setIsSending(true);
-    await onSave({ title: text, type, status: type === '任务' ? 'Inbox' : 'Done', source: "QuickCapture" });
+    await onSave({ title: text, type, status: type === '任务' ? '收件箱' : '已完成', source: "QuickCapture" });
     setIsSending(false); setText(""); onClose();
   };
 
@@ -408,7 +382,7 @@ const KanbanCard = ({ item, onMove, onClick }) => (
     <div className="flex justify-between items-center pt-2 border-t border-slate-700/30">
       <span className="text-[10px] text-slate-500">{new Date(item.fields["记录日期"]).toLocaleDateString()}</span>
       <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-        {item.fields["状态"] !== 'Done' && (<button onClick={(e) => { e.stopPropagation(); onMove(item.id, 'Done'); }} className="p-1 hover:bg-emerald-500/20 hover:text-emerald-400 rounded text-slate-500" title="完成"><CheckSquare size={14} /></button>)}
+        {item.fields["状态"] !== '已完成' && (<button onClick={(e) => { e.stopPropagation(); onMove(item.id, '已完成'); }} className="p-1 hover:bg-emerald-500/20 hover:text-emerald-400 rounded text-slate-500" title="完成"><CheckSquare size={14} /></button>)}
       </div>
     </div>
   </div>
@@ -422,7 +396,6 @@ const WelcomeScreen = ({ onStart }) => (
   <div className="min-h-screen bg-slate-950 text-slate-200 font-sans">
     <nav className="flex items-center justify-between px-6 py-6 max-w-7xl mx-auto border-b border-slate-800/50"><Logo /><button onClick={onStart} className="px-4 py-2 text-sm font-bold text-slate-300 bg-slate-800/50 border border-slate-700 rounded-lg hover:bg-slate-700 hover:text-white transition-all">开启体验 / 登录</button></nav>
     <div className="max-w-4xl mx-auto px-6 pt-20 pb-20 text-center animate-fade-in-up"><div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/10 text-indigo-400 text-xs font-bold uppercase tracking-wider mb-6 border border-indigo-500/20">v2.0 Dark Edition</div><h1 className="text-5xl md:text-7xl font-extrabold text-white tracking-tight mb-8 leading-tight">掌控你的 <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400">数字人生</span></h1><p className="text-xl md:text-2xl text-slate-400 mb-10 max-w-2xl mx-auto leading-relaxed">极速录入想法 · 深度管理任务 · 数据完全私有</p><button onClick={onStart} className="group relative inline-flex items-center justify-center px-8 py-4 font-bold text-white transition-all duration-200 bg-indigo-600 rounded-full hover:bg-indigo-500 hover:shadow-lg hover:shadow-indigo-500/25 hover:-translate-y-1">开启 LifeOS <ArrowRight className="ml-2 w-5 h-5 group-hover:translate-x-1 transition-transform" /></button></div>
-    
     <div className="bg-slate-900/50 py-24 border-y border-slate-800/50">
       <div className="max-w-7xl mx-auto px-6">
         <div className="grid md:grid-cols-3 gap-8">
@@ -432,7 +405,6 @@ const WelcomeScreen = ({ onStart }) => (
         </div>
       </div>
     </div>
-
     <div className="py-24">
         <div className="max-w-6xl mx-auto px-6">
            <div className="text-center mb-16"><h2 className="text-3xl font-bold text-white mb-4">只需三步，即刻开启</h2><p className="text-slate-500">连接飞书，无需复杂的服务器配置。</p></div>
@@ -444,7 +416,6 @@ const WelcomeScreen = ({ onStart }) => (
            </div>
         </div>
     </div>
-
     <footer className="bg-slate-950 border-t border-slate-800 text-slate-500 py-12 text-center text-sm">
       <div className="max-w-2xl mx-auto px-4">
         <div className="flex flex-wrap justify-center gap-6 font-medium mb-8 text-slate-400">
@@ -459,21 +430,8 @@ const WelcomeScreen = ({ onStart }) => (
   </div>
 );
 
-const FeatureCard = ({ icon, color, title, desc }) => (
-  <div className="bg-slate-900 border border-slate-800 p-8 rounded-2xl hover:border-slate-700 transition-colors">
-    <div className={`w-12 h-12 ${color} rounded-xl flex items-center justify-center mb-6`}>{icon}</div>
-    <h3 className="text-xl font-bold mb-3 text-slate-200">{title}</h3>
-    <p className="text-slate-500 leading-relaxed text-sm">{desc}</p>
-  </div>
-);
-
-const StepCard = ({ num, title, desc }) => (
-  <div className="bg-slate-900 p-6 rounded-2xl border border-slate-800 text-center relative z-10">
-    <div className="w-10 h-10 bg-slate-800 text-white rounded-full flex items-center justify-center font-bold text-lg mx-auto mb-6 border-4 border-slate-950 shadow-lg">{num}</div>
-    <h3 className="text-lg font-bold mb-2 text-slate-200">{title}</h3>
-    <p className="text-sm text-slate-500 leading-relaxed">{desc}</p>
-  </div>
-);
+const FeatureCard = ({ icon, color, title, desc }) => (<div className="bg-slate-900 border border-slate-800 p-8 rounded-2xl hover:border-slate-700 transition-colors"><div className={`w-12 h-12 ${color} rounded-xl flex items-center justify-center mb-6`}>{icon}</div><h3 className="text-xl font-bold mb-3 text-slate-200">{title}</h3><p className="text-slate-500 leading-relaxed text-sm">{desc}</p></div>);
+const StepCard = ({ num, title, desc }) => (<div className="bg-slate-900 p-6 rounded-2xl border border-slate-800 text-center relative z-10"><div className="w-10 h-10 bg-slate-800 text-white rounded-full flex items-center justify-center font-bold text-lg mx-auto mb-6 border-4 border-slate-950 shadow-lg">{num}</div><h3 className="text-lg font-bold mb-2 text-slate-200">{title}</h3><p className="text-sm text-slate-500 leading-relaxed">{desc}</p></div>);
 
 const FieldGuide = () => {
   const [isOpen, setIsOpen] = useState(false);
@@ -486,7 +444,7 @@ const FieldGuide = () => {
            <div className="grid grid-cols-2 gap-2 text-slate-300">
               <div className="p-1.5 bg-slate-900 rounded border border-slate-800">标题 (文本)</div>
               <div className="p-1.5 bg-slate-900 rounded border border-slate-800">内容 (文本)</div>
-              <div className="p-1.5 bg-slate-900 rounded border border-slate-800">状态 (单选: Inbox/Todo/Doing/Done)</div>
+              <div className="p-1.5 bg-slate-900 rounded border border-slate-800">状态 (单选: 收件箱/待办/进行中/已完成)</div>
               <div className="p-1.5 bg-slate-900 rounded border border-slate-800">类型 (单选: 灵感/任务/笔记/日记)</div>
               <div className="p-1.5 bg-slate-900 rounded border border-slate-800">优先级 (单选: 紧急/普通/不急)</div>
               <div className="p-1.5 bg-slate-900 rounded border border-slate-800">下一步 (多选: 学习/整理/分享...)</div>
@@ -556,8 +514,8 @@ const MobileView = ({ onSettings, notify }) => {
   const [inputValue, setInputValue] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
-  const [details, setDetails] = useState({ category: "Inbox", type: "灵感", dueDate: "", note: "" });
-  const categories = ["Inbox 📥", "Work 💼", "Life 🏠", "Idea 💡", "Reading 📖"];
+  const [details, setDetails] = useState({ category: "收件箱", type: "灵感", dueDate: "", note: "" });
+  const categories = ["收件箱 📥", "工作 💼", "生活 🏠", "灵感 💡", "阅读 📖"];
 
   useEffect(() => { loadData(); }, []);
 
@@ -566,7 +524,7 @@ const MobileView = ({ onSettings, notify }) => {
       const data = await feishuService.fetchRecords();
       setRecords(data);
       const todayStr = new Date().toDateString();
-      setTodayTasks(data.filter(r => r.fields["类型"] === '任务' && r.fields["状态"] !== 'Done' && r.fields["截止日期"] && new Date(r.fields["截止日期"]).toDateString() === todayStr));
+      setTodayTasks(data.filter(r => r.fields["类型"] === '任务' && r.fields["状态"] !== '已完成' && r.fields["截止日期"] && new Date(r.fields["截止日期"]).toDateString() === todayStr));
       setRecentInputs(data.slice(0, 8)); // 取最近8条
     } catch (e) { console.error(e); }
   };
@@ -575,8 +533,8 @@ const MobileView = ({ onSettings, notify }) => {
     if (!inputValue.trim()) return;
     setIsSending(true);
     try {
-      await feishuService.addRecord({ title: inputValue, content: details.note, source: "Mobile", category: details.category.split(" ")[0], type: details.type, dueDate: details.dueDate, status: "Inbox" });
-      setInputValue(""); setDetails({ category: "Inbox", type: "灵感", dueDate: "", note: "" }); setShowDetails(false);
+      await feishuService.addRecord({ title: inputValue, content: details.note, source: "Mobile", category: details.category.split(" ")[0], type: details.type, dueDate: details.dueDate, status: "收件箱" });
+      setInputValue(""); setDetails({ category: "收件箱", type: "灵感", dueDate: "", note: "" }); setShowDetails(false);
       notify("已记录", "success");
       loadData();
     } catch (error) { notify("发送失败", "error"); } finally { setIsSending(false); }
@@ -590,7 +548,7 @@ const MobileView = ({ onSettings, notify }) => {
   };
 
   const handleDone = async (id) => {
-    await feishuService.updateRecord(id, { Status: "Done" });
+    await feishuService.updateRecord(id, { "状态": "已完成" });
     notify("任务完成", "success");
     loadData();
   };
@@ -667,8 +625,9 @@ const DesktopView = ({ onLogout, onSettings, notify, isDemoMode, onGoHome }) => 
   
   // Today's Tasks Logic
   const todayStr = new Date().toDateString();
-  const todayTasks = records.filter(r => r.fields["类型"] === '任务' && r.fields["状态"] !== 'Done' && r.fields["截止日期"] && new Date(r.fields["截止日期"]).toDateString() === todayStr);
-  
+  const todayTasks = records.filter(r => r.fields["类型"] === '任务' && r.fields["状态"] !== '已完成' && r.fields["截止日期"] && new Date(r.fields["截止日期"]).toDateString() === todayStr);
+  const completedToday = records.filter(r => r.fields["状态"] === '已完成' && r.fields["截止日期"] && new Date(r.fields["截止日期"]).toDateString() === todayStr);
+
   const directions = ["灵感", "AI", "提效工具", "个人成长", "自媒体", "日记"];
   const sources = ["推特", "微信群", "公众号", "即刻", "小红书", "Youtube", "其他"];
   const actions = ["学习", "整理", "收藏使用", "分享", "待办"];
@@ -683,11 +642,11 @@ const DesktopView = ({ onLogout, onSettings, notify, isDemoMode, onGoHome }) => 
     try {
       const data = await feishuService.fetchRecords();
       setRecords(data);
-      setInboxItems(data.filter(r => r.fields["状态"] === 'Inbox'));
-      setTodoItems(data.filter(r => r.fields["状态"] === 'Todo'));
-      setDoingItems(data.filter(r => r.fields["状态"] === 'Doing'));
-      setDoneItems(data.filter(r => r.fields["状态"] === 'Done'));
-      setKnowledgeItems(data.filter(r => r.fields["类型"] === '笔记' || r.fields["分类"] === 'Reading'));
+      setInboxItems(data.filter(r => r.fields["状态"] === '收件箱'));
+      setTodoItems(data.filter(r => r.fields["状态"] === '待办'));
+      setDoingItems(data.filter(r => r.fields["状态"] === '进行中'));
+      setDoneItems(data.filter(r => r.fields["状态"] === '已完成'));
+      setKnowledgeItems(data.filter(r => r.fields["类型"] === '笔记' || r.fields["分类"] === '阅读'));
       setJournalItems(data.filter(r => r.fields["类型"] === '日记' || r.fields["内容方向"] === '日记'));
     } catch (e) { console.error(e); }
   };
@@ -703,7 +662,7 @@ const DesktopView = ({ onLogout, onSettings, notify, isDemoMode, onGoHome }) => 
     if (!quickInput.trim()) return;
     setIsQuickAdding(true);
     await handleAction(async () => {
-        await feishuService.addRecord({ title: quickInput, content: desktopDetails.note, source: "PC", type: desktopDetails.type, priority: desktopDetails.priority, direction: desktopDetails.direction, infoSource: desktopDetails.infoSource, nextActions: desktopDetails.nextActions, dueDate: desktopDetails.type === '任务' ? desktopDetails.dueDate : null, status: "Inbox", tags: [] });
+        await feishuService.addRecord({ title: quickInput, content: desktopDetails.note, source: "PC", type: desktopDetails.type, priority: desktopDetails.priority, direction: desktopDetails.direction, infoSource: desktopDetails.infoSource, nextActions: desktopDetails.nextActions, dueDate: desktopDetails.type === '任务' ? desktopDetails.dueDate : null, status: "收件箱", tags: [] });
         setQuickInput(""); setDesktopDetails({ type: "灵感", priority: "普通", direction: "灵感", infoSource: "其他", nextActions: [], dueDate: "", note: "" }); setInputExpanded(false);
         notify("已记录", "success");
     });
@@ -715,7 +674,7 @@ const DesktopView = ({ onLogout, onSettings, notify, isDemoMode, onGoHome }) => 
   };
 
   const handleUpdateStatus = (id, status) => handleAction(async () => {
-    await feishuService.updateRecord(id, { Status: status });
+    await feishuService.updateRecord(id, { "状态": status });
     notify("状态已更新", "success");
   });
 
@@ -789,13 +748,18 @@ const DesktopView = ({ onLogout, onSettings, notify, isDemoMode, onGoHome }) => 
                 <div className="md:col-span-2 bg-slate-900 border border-slate-800 p-6 rounded-3xl">
                    <div className="flex items-center gap-2 text-slate-400 text-sm font-bold uppercase tracking-wider mb-4"><Calendar size={14}/> 今日任务</div>
                    <div className="space-y-2">
-                      {todayTasks.map(item => (
-                        <div key={item.id} onClick={() => setEditingItem(item)} className="flex items-center gap-3 p-3 rounded-xl border border-slate-700 bg-slate-800 hover:border-indigo-500/50 cursor-pointer group transition-all">
-                           <button onClick={(e) => { e.stopPropagation(); handleUpdateStatus(item.id, 'Done'); }} className="w-5 h-5 rounded flex items-center justify-center border-2 border-slate-500 hover:border-emerald-500 hover:bg-emerald-500/20 text-transparent transition-all"></button>
-                           <span className="text-sm text-slate-200">{item.fields["标题"]}</span>
-                        </div>
-                      ))}
-                      {todayTasks.length === 0 && <div className="text-slate-600 text-sm text-center py-8">今日无待办任务</div>}
+                      {[...todayTasks, ...completedToday].map(item => {
+                        const isDone = item.fields["状态"] === '已完成';
+                        return (
+                          <div key={item.id} onClick={() => setEditingItem(item)} className={`flex items-center gap-3 p-3 rounded-xl border transition-all ${isDone ? 'bg-slate-900 border-slate-800 opacity-50' : 'bg-slate-800 border-slate-700 hover:border-indigo-500/50'} cursor-pointer group`}>
+                             <button onClick={(e) => { e.stopPropagation(); handleUpdateStatus(item.id, isDone ? '待办' : '已完成'); }} className={`w-5 h-5 rounded flex items-center justify-center transition-all ${isDone ? 'bg-emerald-500 text-white' : 'border-2 border-slate-500 hover:border-emerald-500'}`}>
+                                {isDone && <Check size={12} />}
+                             </button>
+                             <span className={`text-sm ${isDone ? 'text-slate-500 line-through' : 'text-slate-200'}`}>{item.fields["标题"]}</span>
+                          </div>
+                        );
+                      })}
+                      {todayTasks.length + completedToday.length === 0 && <div className="text-slate-600 text-sm text-center py-8">今日无待办任务</div>}
                    </div>
                 </div>
 
@@ -840,7 +804,7 @@ const DesktopView = ({ onLogout, onSettings, notify, isDemoMode, onGoHome }) => 
                         <span className="text-[10px] bg-slate-800 px-1.5 py-0.5 rounded text-slate-500 border border-slate-700">{item.fields["信息来源"]}</span>
                       </div>
                       <div className="flex gap-2 mt-3 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button onClick={(e) => { e.stopPropagation(); handleUpdateStatus(item.id, 'Todo'); }} className="text-xs bg-slate-800 hover:bg-blue-500/20 hover:text-blue-300 px-3 py-1 rounded border border-slate-700 transition-colors">转为待办</button>
+                        <button onClick={(e) => { e.stopPropagation(); handleUpdateStatus(item.id, '待办'); }} className="text-xs bg-slate-800 hover:bg-blue-500/20 hover:text-blue-300 px-3 py-1 rounded border border-slate-700 transition-colors">转为待办</button>
                         <button onClick={(e) => { e.stopPropagation(); handleDelete(item.id); }} className="text-xs bg-slate-800 hover:bg-red-500/20 hover:text-red-300 px-3 py-1 rounded border border-slate-700 transition-colors flex items-center gap-1"><Trash2 size={12}/> 删除</button>
                       </div>
                   </div>
@@ -853,11 +817,11 @@ const DesktopView = ({ onLogout, onSettings, notify, isDemoMode, onGoHome }) => 
           {/* VIEW: PLANNER */}
           {activeTab === 'planner' && (
             <div className="flex gap-6 h-full overflow-x-auto pb-4">
-              {['Todo', 'Doing', 'Done'].map(status => (
+              {['待办', '进行中', '已完成'].map(status => (
                 <div key={status} className="flex-1 min-w-[300px] bg-slate-900/50 rounded-2xl border border-slate-800 flex flex-col">
                   <div className="p-4 border-b border-slate-800 flex justify-between items-center"><span className="font-bold text-slate-400">{status}</span></div>
                   <div className="p-3 flex-1 overflow-y-auto custom-scrollbar">
-                    {(status === 'Todo' ? todoItems : status === 'Doing' ? doingItems : doneItems).map(item => <KanbanCard key={item.id} item={item} onMove={handleUpdateStatus} onClick={() => setEditingItem(item)} />)}
+                    {(status === '待办' ? todoItems : status === '进行中' ? doingItems : doneItems).map(item => <KanbanCard key={item.id} item={item} onMove={handleUpdateStatus} onClick={() => setEditingItem(item)} />)}
                   </div>
                 </div>
               ))}
@@ -919,10 +883,7 @@ export default function App() {
   const notify = (msg, type = "info") => setNotification({ message: msg, type });
   const handleSaveConfig = (newConfig) => { feishuService.saveConfig(newConfig); setConfig(newConfig); setIsConfiguring(false); setShowWelcome(false); };
   const handleLogout = () => { if (confirm("确定要断开连接吗？")) { feishuService.clearConfig(); setConfig(null); setShowWelcome(true); setIsConfiguring(false); } };
-  
-  // [FIX] onCancel -> force exit config mode and go to DesktopView (Demo Mode if no config)
   const handleCancelConfig = () => { setIsConfiguring(false); setShowWelcome(false); };
-
   const isDemoMode = !config;
 
   return (
