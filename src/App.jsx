@@ -52,11 +52,39 @@ const extractTags = (text) => {
   return matches;
 };
 
+// [NEW] 励志名言库
+const QUOTES = [
+  "种一棵树最好的时间是十年前，其次是现在。",
+  "不仅要低头拉车，还要抬头看路。",
+  "流水不争先，争的是滔滔不绝。",
+  "每一个不曾起舞的日子，都是对生命的辜负。",
+  "凡是过往，皆为序章。",
+  "知行合一，止于至善。",
+  "保持饥饿，保持愚蠢。",
+  "星光不问赶路人，时光不负有心人。",
+  "悲观者往往正确，乐观者往往成功。",
+  "日拱一卒，功不唐捐。",
+  "与其感慨路难行，不如马上出发。",
+  "生活原本沉闷，但跑起来就有风。"
+];
+
+// [NEW] 获取动态问候语
+const getGreeting = () => {
+  const hour = new Date().getHours();
+  if (hour < 5) return "深夜好，注意休息";
+  if (hour < 9) return "早安，开启元气满满的一天";
+  if (hour < 12) return "上午好，保持专注";
+  if (hour < 14) return "午安，记得按时吃饭";
+  if (hour < 18) return "下午好，继续加油";
+  if (hour < 22) return "晚上好，享受闲暇时光";
+  return "夜深了，早点休息";
+};
+
 /**
  * --- UTILS: MOCK DATA ---
  */
 const MOCK_DATA = [
-  { id: '101', fields: { "标题": "👋 欢迎使用 LifeOS！", "内容": "点击卡片编辑详情。", "状态": STATUS.INBOX, "类型": TYPE.IDEA, "优先级": PRIORITY.NORMAL, "内容方向": "灵感", "来源": "PC", "记录日期": Date.now() } },
+  { id: '101', fields: { "标题": "👋 欢迎使用 LifeOS！(点击我编辑)", "内容": "这是一个演示条目。", "状态": STATUS.INBOX, "类型": TYPE.IDEA, "优先级": PRIORITY.NORMAL, "内容方向": "灵感", "来源": "PC", "记录日期": Date.now() } },
   { id: '102', fields: { "标题": "🔥 今日紧急任务", "状态": STATUS.TODO, "类型": TYPE.TASK, "优先级": PRIORITY.HIGH, "内容方向": "提效工具", "来源": "PC", "截止日期": Date.now(), "标签": ["工作"], "记录日期": Date.now() - 100000 } },
   { id: '103', fields: { "标题": "正在进行的任务", "状态": STATUS.DOING, "类型": TYPE.TASK, "优先级": PRIORITY.NORMAL, "内容方向": "提效工具", "来源": "PC", "截止日期": Date.now(), "记录日期": Date.now() - 200000 } },
   { id: '104', fields: { "标题": "已完成的任务", "状态": STATUS.DONE, "类型": TYPE.TASK, "优先级": PRIORITY.NORMAL, "内容方向": "个人成长", "来源": "Mobile", "截止日期": Date.now(), "记录日期": Date.now() - 300000 } },
@@ -72,7 +100,7 @@ class FeishuService {
     this.API_BASE = '/api/feishu'; 
     this.isPreview = typeof window !== 'undefined' && window.location.protocol === 'blob:';
     
-    // [UPDATED] 精简必需字段列表
+    // 必需字段列表
     this.REQUIRED_FIELDS = [
       "标题", "内容", "状态", "类型", "优先级", 
       "内容方向", "来源", "标签", "下一步", 
@@ -201,7 +229,6 @@ class FeishuService {
     return await this.request(`/bitable/v1/apps/${config.appToken}/tables/${config.tableId}/records/${recordId}`, 'DELETE', null, token);
   }
 
-  // --- 自动建表 ---
   async createTable(appId, appSecret, appToken) {
     console.log("🚀 开始自动创建飞书表格...");
     const token = await this.getTenantAccessToken(appId, appSecret);
@@ -330,31 +357,31 @@ const EditRecordModal = ({ isOpen, record, onClose, onSave }) => {
       <div className="space-y-4">
         <div>
            <label className="text-xs font-bold text-slate-500 uppercase block mb-1">标题</label>
-           <input className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-white focus:border-indigo-500 outline-none" value={formData["标题"]} onChange={e => setFormData({...formData, "标题": e.target.value})} />
+           <input className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-white focus:border-indigo-500 outline-none" value={formData["标题"] || ""} onChange={e => setFormData({...formData, "标题": e.target.value})} />
         </div>
         <div>
            <label className="text-xs font-bold text-slate-500 uppercase block mb-1">内容 / 备注</label>
-           <textarea className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-slate-300 focus:border-indigo-500 outline-none resize-none h-24" value={formData["内容"]} onChange={e => setFormData({...formData, "内容": e.target.value})} />
+           <textarea className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-slate-300 focus:border-indigo-500 outline-none resize-none h-24" value={formData["内容"] || ""} onChange={e => setFormData({...formData, "内容": e.target.value})} />
         </div>
         
         <div>
            <label className="text-xs font-bold text-slate-500 uppercase block mb-1">标签 (支持 #话题 自动提取)</label>
            <div className="flex items-center gap-2 bg-slate-950 border border-slate-800 rounded-lg p-2">
              <Hash size={16} className="text-slate-500" />
-             <input className="w-full bg-transparent text-slate-300 outline-none" placeholder="AI, 效率" value={formData["标签"]} onChange={e => setFormData({...formData, "标签": e.target.value})} />
+             <input className="w-full bg-transparent text-slate-300 outline-none" placeholder="AI, 效率" value={formData["标签"] || ""} onChange={e => setFormData({...formData, "标签": e.target.value})} />
            </div>
         </div>
         
         <div className="grid grid-cols-2 gap-4">
            <div>
               <label className="text-xs font-bold text-slate-500 uppercase block mb-1">状态</label>
-              <select className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-slate-300 outline-none" value={formData["状态"]} onChange={e => setFormData({...formData, "状态": e.target.value})}>
+              <select className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-slate-300 outline-none" value={formData["状态"] || "收件箱"} onChange={e => setFormData({...formData, "状态": e.target.value})}>
                  {[STATUS.INBOX, STATUS.TODO, STATUS.DOING, STATUS.DONE].map(o => <option key={o} value={o}>{o}</option>)}
               </select>
            </div>
            <div>
               <label className="text-xs font-bold text-slate-500 uppercase block mb-1">优先级</label>
-              <select className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-slate-300 outline-none" value={formData["优先级"]} onChange={e => setFormData({...formData, "优先级": e.target.value})}>
+              <select className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-slate-300 outline-none" value={formData["优先级"] || "普通"} onChange={e => setFormData({...formData, "优先级": e.target.value})}>
                  {[PRIORITY.HIGH, PRIORITY.NORMAL, PRIORITY.LOW].map(o => <option key={o} value={o}>{o}</option>)}
               </select>
            </div>
@@ -363,7 +390,7 @@ const EditRecordModal = ({ isOpen, record, onClose, onSave }) => {
         <div className="grid grid-cols-2 gap-4">
            <div>
               <label className="text-xs font-bold text-slate-500 uppercase block mb-1">类型</label>
-              <select className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-slate-300 outline-none" value={formData["类型"]} onChange={e => setFormData({...formData, "类型": e.target.value})}>
+              <select className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-slate-300 outline-none" value={formData["类型"] || "灵感"} onChange={e => setFormData({...formData, "类型": e.target.value})}>
                  {[TYPE.IDEA, TYPE.TASK, TYPE.NOTE, TYPE.JOURNAL].map(o => <option key={o} value={o}>{o}</option>)}
               </select>
            </div>
@@ -676,6 +703,30 @@ const DesktopView = ({ onLogout, onSettings, notify, isDemoMode, onGoHome }) => 
     document.addEventListener("mousedown", handleClickOutside); return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [quickInput]);
 
+  // [NEW] 问候语逻辑
+  const getGreeting = () => {
+    const hour = new Date().getHours();
+    if (hour < 5) return "深夜好，注意休息";
+    if (hour < 9) return "早安，开启元气满满的一天";
+    if (hour < 12) return "上午好，保持专注";
+    if (hour < 14) return "午安，记得按时吃饭";
+    if (hour < 18) return "下午好，继续加油";
+    if (hour < 22) return "晚上好，享受闲暇时光";
+    return "夜深了，早点休息";
+  };
+  
+  // [NEW] 随机名言
+  const [quote, setQuote] = useState("");
+  useEffect(() => {
+    const QUOTES = [
+      "种一棵树最好的时间是十年前，其次是现在。", "不仅要低头拉车，还要抬头看路。", "流水不争先，争的是滔滔不绝。",
+      "每一个不曾起舞的日子，都是对生命的辜负。", "凡是过往，皆为序章。", "知行合一，止于至善。",
+      "保持饥饿，保持愚蠢。", "星光不问赶路人，时光不负有心人。", "悲观者往往正确，乐观者往往成功。",
+      "日拱一卒，功不唐捐。", "与其感慨路难行，不如马上出发。", "生活原本沉闷，但跑起来就有风。"
+    ];
+    setQuote(QUOTES[Math.floor(Math.random() * QUOTES.length)]);
+  }, []);
+
   const loadData = async () => {
     try {
       const data = await feishuService.fetchRecords();
@@ -685,6 +736,8 @@ const DesktopView = ({ onLogout, onSettings, notify, isDemoMode, onGoHome }) => 
       setDoingItems(data.filter(r => r.fields["状态"] === '进行中' && r.fields["类型"] === '任务'));
       setDoneItems(data.filter(r => r.fields["状态"] === '已完成' && r.fields["类型"] === '任务'));
       setKnowledgeItems(data.filter(r => r.fields["类型"] === '笔记' || r.fields["分类"] === '阅读'));
+      
+      // Recent Activity Logic
       setJournalItems(data.filter(r => r.fields["类型"] === '日记' || r.fields["内容方向"] === '日记'));
     } catch (e) { console.error(e); }
   };
@@ -711,41 +764,10 @@ const DesktopView = ({ onLogout, onSettings, notify, isDemoMode, onGoHome }) => 
     await handleAction(async () => { await feishuService.addRecord(data); notify("已保存", "success"); });
   };
 
-  // Today's Task Quick Add
-  const [todayInput, setTodayInput] = useState("");
-  const handleTodayAdd = async (e) => {
-    e.preventDefault();
-    if (!todayInput.trim()) return;
-    
-    const newRec = { id: "t_"+Date.now(), fields: { "标题": todayInput, "状态": STATUS.DOING, "类型": TYPE.TASK, "优先级": PRIORITY.NORMAL, "截止日期": Date.now(), "记录日期": Date.now() } };
-    setRecords([newRec, ...records]); // Optimistic
-    setTodayInput("");
-
-    await handleAction(async () => {
-       await feishuService.addRecord({
-           title: newRec.fields["标题"], status: STATUS.DOING, type: TYPE.TASK, priority: PRIORITY.NORMAL, dueDate: new Date().toISOString().split('T')[0], source: "PC", tags: []
-       });
-       notify("任务已添加至今日", "success");
-    });
-  }
-
-  const handleUpdateStatus = async (id, status) => {
-    // Optimistic Update
-    const updatedRecords = records.map(r => r.id === id ? { ...r, fields: { ...r.fields, "状态": status } } : r);
-    setRecords(updatedRecords);
-    // Update local lists immediately for smooth UI
-    setTodoItems(updatedRecords.filter(r => r.fields["状态"] === STATUS.TODO));
-    setDoingItems(updatedRecords.filter(r => r.fields["状态"] === STATUS.DOING));
-    setDoneItems(updatedRecords.filter(r => r.fields["状态"] === STATUS.DONE));
-    
-    try {
-        await feishuService.updateRecord(id, { "状态": status });
-        notify("状态已更新", "success");
-    } catch (e) {
-        notify("更新失败", "error");
-        loadData(); // Revert
-    }
-  };
+  const handleUpdateStatus = (id, status) => handleAction(async () => {
+    await feishuService.updateRecord(id, { "状态": status });
+    notify("状态已更新", "success");
+  });
 
   const handleEditSave = (id, fields) => handleAction(async () => {
     await feishuService.updateRecord(id, fields);
@@ -753,14 +775,14 @@ const DesktopView = ({ onLogout, onSettings, notify, isDemoMode, onGoHome }) => 
     notify("修改已保存", "success");
   });
 
-  const handleDelete = (id) => { 
-      if(confirm("确定删除吗？")) { 
-          setInboxItems(inboxItems.filter(i => i.id !== id)); // Optimistic
-          handleAction(async () => { await feishuService.deleteRecord(id); notify("已删除", "success"); }); 
-      } 
-  };
-  
+  const handleDelete = (id) => { if(confirm("确定删除吗？")) { handleAction(async () => { await feishuService.deleteRecord(id); notify("已删除", "success"); }); } };
   const toggleAction = (action) => { setDesktopDetails(prev => ({ ...prev, nextActions: prev.nextActions.includes(action) ? prev.nextActions.filter(a => a !== action) : [...prev.nextActions, action] })); };
+
+  // Recent Activity Helper
+  const recentActivities = [...records]
+      .filter(r => r.fields["类型"] !== '任务')
+      .sort((a, b) => new Date(b.fields["记录日期"]) - new Date(a.fields["记录日期"]))
+      .slice(0, 5);
 
   return (
     <div className="flex h-screen bg-slate-950 text-slate-200 font-sans overflow-hidden">
@@ -803,8 +825,8 @@ const DesktopView = ({ onLogout, onSettings, notify, isDemoMode, onGoHome }) => 
                 <div className="md:col-span-2 bg-gradient-to-br from-indigo-600 to-violet-700 p-8 rounded-3xl text-white shadow-2xl shadow-indigo-900/20 relative overflow-hidden group">
                    <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full blur-3xl -mr-16 -mt-16 group-hover:scale-110 transition-transform duration-700"></div>
                    <div className="relative z-10">
-                      <h2 className="text-3xl font-bold mb-2">早安，探索者</h2>
-                      <p className="text-indigo-100 mb-8 opacity-80">今天是你记录生活的第 {Math.ceil((Date.now() - 1704067200000)/86400000)} 天</p>
+                      <h2 className="text-3xl font-bold mb-2">{getGreeting()}</h2>
+                      <p className="text-indigo-100 mb-8 opacity-80 font-medium">“{quote}”</p>
                       <button onClick={() => setIsQuickCaptureOpen(true)} className="bg-white text-indigo-600 px-6 py-3 rounded-xl font-bold text-sm hover:bg-indigo-50 transition-colors shadow-lg flex items-center gap-2"><Plus size={18}/> 记点什么</button>
                    </div>
                 </div>
@@ -821,20 +843,8 @@ const DesktopView = ({ onLogout, onSettings, notify, isDemoMode, onGoHome }) => 
 
                 {/* TODAY'S TASKS (Updated) */}
                 <div className="md:col-span-2 bg-slate-900 border border-slate-800 p-6 rounded-3xl">
-                   <div className="flex items-center justify-between mb-4">
-                     <div className="flex items-center gap-2 text-slate-400 text-sm font-bold uppercase tracking-wider"><Calendar size={14}/> 今日任务</div>
-                   </div>
-                   <form onSubmit={handleTodayAdd} className="mb-4 relative">
-                      <input 
-                        type="text" 
-                        placeholder="快速添加今日任务 (回车保存)..." 
-                        className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2 text-sm text-slate-200 focus:border-indigo-500 outline-none"
-                        value={todayInput}
-                        onChange={e => setTodayInput(e.target.value)}
-                      />
-                      <button type="submit" disabled={!todayInput.trim()} className="absolute right-2 top-1.5 text-slate-400 hover:text-indigo-400 disabled:opacity-0 transition-all"><Plus size={18}/></button>
-                   </form>
-                   <div className="space-y-2 max-h-[300px] overflow-y-auto custom-scrollbar">
+                   <div className="flex items-center gap-2 text-slate-400 text-sm font-bold uppercase tracking-wider mb-4"><Calendar size={14}/> 今日任务</div>
+                   <div className="space-y-2">
                       {[...todayTasks, ...completedToday].map(item => {
                         const isDone = item.fields["状态"] === STATUS.DONE;
                         return (
@@ -857,9 +867,9 @@ const DesktopView = ({ onLogout, onSettings, notify, isDemoMode, onGoHome }) => 
                 </div>
 
                 <div className="md:col-span-2 bg-slate-900 border border-slate-800 p-6 rounded-3xl">
-                   <div className="flex items-center gap-2 text-slate-400 text-sm font-bold uppercase tracking-wider mb-4"><Clock size={14}/> 最近动态</div>
+                   <div className="flex items-center gap-2 text-slate-400 text-sm font-bold uppercase tracking-wider mb-4"><Clock size={14}/> 最近动态 (非任务)</div>
                    <div className="space-y-3">
-                      {[...journalItems, ...knowledgeItems].slice(0, 3).map(item => (
+                      {recentActivities.map(item => (
                          <div key={item.id} onClick={() => setEditingItem(item)} className="flex items-center justify-between p-3 hover:bg-slate-800 rounded-xl transition-colors cursor-pointer group">
                             <div className="flex items-center gap-3">
                                <div className={`p-2 rounded-lg ${item.fields["类型"] === '日记' ? 'bg-amber-500/10 text-amber-400' : 'bg-emerald-500/10 text-emerald-400'}`}>
@@ -870,6 +880,7 @@ const DesktopView = ({ onLogout, onSettings, notify, isDemoMode, onGoHome }) => 
                             <span className="text-xs text-slate-600">{new Date(item.fields["记录日期"]).toLocaleDateString()}</span>
                          </div>
                       ))}
+                      {recentActivities.length === 0 && <div className="text-slate-600 text-sm text-center py-4">暂无新记录</div>}
                    </div>
                 </div>
              </div>
@@ -881,7 +892,7 @@ const DesktopView = ({ onLogout, onSettings, notify, isDemoMode, onGoHome }) => 
               <div className="mb-6 bg-slate-900 border border-slate-800 rounded-2xl shadow-xl p-4 border-b border-slate-800" ref={inputRef}>
                 <form onSubmit={handleInboxAdd} className={`relative transition-all duration-300 ${inputExpanded ? 'pb-2' : ''}`}>
                     <input type="text" value={quickInput} onFocus={() => setInputExpanded(true)} onChange={(e) => setQuickInput(e.target.value)} placeholder="快速捕获想法..." className={`w-full pl-4 pr-12 py-3 bg-slate-950 border border-slate-800 rounded-xl text-white focus:outline-none focus:border-indigo-500/50 transition-all placeholder-slate-600 ${inputExpanded ? 'bg-slate-900' : ''}`} />
-                    {inputExpanded && (<div className="mt-3 space-y-3 animate-fade-in"><textarea className="w-full text-sm bg-slate-800/50 border border-slate-700 p-3 rounded-lg resize-none h-20 text-slate-300 placeholder-slate-600" placeholder="添加备注..." value={desktopDetails.note} onChange={e => setDesktopDetails({...desktopDetails, note: e.target.value})} /><div className="flex gap-2 items-center flex-wrap"><select className="bg-slate-800 border border-slate-700 text-xs text-slate-300 px-2 py-1.5 rounded-lg" value={desktopDetails.direction} onChange={e => setDesktopDetails({...desktopDetails, direction: e.target.value})}>{directions.map(d => <option key={d} value={d}>{d}</option>)}</select><select className="bg-slate-800 border border-slate-700 text-xs text-slate-300 px-2 py-1.5 rounded-lg" value={desktopDetails.infoSource} onChange={e => setDesktopDetails({...desktopDetails, infoSource: e.target.value})}>{sources.map(s => <option key={s} value={s}>{s}</option>)}</select></div><div className="flex flex-wrap gap-2">{actions.map(action => (<button key={action} type="button" onClick={() => toggleAction(action)} className={`px-2 py-1 rounded border text-[10px] flex items-center gap-1 transition-colors ${desktopDetails.nextActions.includes(action) ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-300' : 'bg-slate-900 border-slate-700 text-slate-500 hover:border-slate-600'}`}>{desktopDetails.nextActions.includes(action) && <Check size={8} />} {action}</button>))}</div><div className="flex justify-between items-center pt-2"><button type="submit" disabled={!quickInput.trim() || isQuickAdding} className="bg-indigo-600 text-white px-6 py-1.5 rounded-lg text-sm font-bold hover:bg-indigo-500 disabled:opacity-50 transition-colors">{isQuickAdding ? '保存中...' : '保存'}</button></div></div>)}
+                    {inputExpanded && (<div className="mt-3 space-y-3 animate-fade-in"><textarea className="w-full text-sm bg-slate-800/50 border border-slate-700 p-3 rounded-lg resize-none h-20 text-slate-300 placeholder-slate-600" placeholder="添加备注..." value={desktopDetails.note} onChange={e => setDesktopDetails({...desktopDetails, note: e.target.value})} /><div className="flex gap-2 items-center flex-wrap"><select className="bg-slate-800 border border-slate-700 text-xs text-slate-300 px-2 py-1.5 rounded-lg" value={desktopDetails.direction} onChange={e => setDesktopDetails({...desktopDetails, direction: e.target.value})}>{directions.map(d => <option key={d} value={d}>{d}</option>)}</select></div><div className="flex flex-wrap gap-2">{actions.map(action => (<button key={action} type="button" onClick={() => toggleAction(action)} className={`px-2 py-1 rounded border text-[10px] flex items-center gap-1 transition-colors ${desktopDetails.nextActions.includes(action) ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-300' : 'bg-slate-900 border-slate-700 text-slate-500 hover:border-slate-600'}`}>{desktopDetails.nextActions.includes(action) && <Check size={8} />} {action}</button>))}</div><div className="flex justify-between items-center pt-2"><button type="submit" disabled={!quickInput.trim() || isQuickAdding} className="bg-indigo-600 text-white px-6 py-1.5 rounded-lg text-sm font-bold hover:bg-indigo-500 disabled:opacity-50 transition-colors">{isQuickAdding ? '保存中...' : '保存'}</button></div></div>)}
                     {!inputExpanded && (<button type="submit" disabled={!quickInput.trim() || isQuickAdding} className="absolute right-2 top-2 p-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-500 disabled:opacity-50 transition-colors"><ArrowRight size={16} /></button>)}
                 </form>
               </div>
@@ -894,7 +905,6 @@ const DesktopView = ({ onLogout, onSettings, notify, isDemoMode, onGoHome }) => 
                       <p className="text-xs text-slate-500 line-clamp-2 mb-2">{item.fields["内容"]}</p>
                       <div className="flex gap-2">
                         <span className="text-[10px] bg-slate-800 px-1.5 py-0.5 rounded text-slate-500 border border-slate-700">{item.fields["内容方向"]}</span>
-                        <span className="text-[10px] bg-slate-800 px-1.5 py-0.5 rounded text-slate-500 border border-slate-700">{item.fields["信息来源"]}</span>
                       </div>
                       <div className="flex gap-2 mt-3 opacity-0 group-hover:opacity-100 transition-opacity">
                         <button onClick={(e) => { e.stopPropagation(); handleUpdateStatus(item.id, '待办'); }} className="text-xs bg-slate-800 hover:bg-blue-500/20 hover:text-blue-300 px-3 py-1 rounded border border-slate-700 transition-colors">转为待办</button>
