@@ -193,13 +193,12 @@ class FeishuService {
 
   async addRecord(data) {
     const { config, token } = await this.checkConfigOrThrow();
-    
-    let finalTitle = data.title;
-    if (!finalTitle && data.content) {
-       const firstLine = data.content.split('\n')[0];
-       finalTitle = firstLine.length > 20 ? firstLine.substring(0, 20) + "..." : firstLine;
-    }
-    const autoTags = extractTags(finalTitle + " " + data.content);
+    const rawInput = data.title || "";
+    const firstLine = rawInput.split('\n')[0];
+    const smartTitle = firstLine.length > 40 ? firstLine.substring(0, 40) + "..." : firstLine;
+    const fullContent = rawInput + (data.content ? `\n\n【备注】\n${data.content}` : "");
+
+    const autoTags = extractTags(rawInput + " " + fullContent);
 
     const fields = {
       "标题": smartTitle || "无标题记录", 
