@@ -37,7 +37,6 @@ class FeishuService {
     this.isPreview = typeof window !== 'undefined' && window.location.protocol === 'blob:';
   }
 
-  // [FIX] 增加校验：只有当 AppID 等关键字段存在时，才认为 Config 有效
   getConfig() { 
     const data = localStorage.getItem(this.STORAGE_KEY); 
     if (!data) return null;
@@ -46,7 +45,7 @@ class FeishuService {
       if (parsed && parsed.appId && parsed.appSecret && parsed.appToken && parsed.tableId) {
         return parsed;
       }
-      return null; // 配置不完整视为空
+      return null;
     } catch (e) { return null; }
   }
 
@@ -65,15 +64,30 @@ class FeishuService {
     if (token) headers['Authorization'] = `Bearer ${token}`;
     try {
       const response = await fetch(`${this.API_BASE}${endpoint}`, { method, headers, body: body ? JSON.stringify(body) : null });
+      
       if (!response.ok) {
         let errorMsg = `HTTP Error ${response.status}`;
-        try { const errData = await response.json(); errorMsg = `API Error: ${errData.msg || errData.message}`; } catch (e) {}
+        try {
+            const errData = await response.json();
+            errorMsg = `API Error: ${errData.msg || errData.message || JSON.stringify(errData)}`;
+        } catch (e) {
+            const text = await response.text();
+            if (text) errorMsg = `API Error: ${text}`;
+        }
         throw new Error(errorMsg);
       }
+
       const result = await response.json();
       if (result.code !== 0) throw new Error(`Feishu API Error [${result.code}]: ${result.msg}`);
-      return result.data;
-    } catch (error) { console.error("API Request Failed:", error); throw error; }
+      
+      // [FIXED] 飞书 Auth 接口返回的数据在 root 层级，而 Bitable 在 data 层级
+      // 这里做一个智能判断，优先返回 data，如果没有 data 但有内容，则返回 result 本身
+      return result.data || result;
+      
+    } catch (error) { 
+        console.error("API Request Failed:", error); 
+        throw error; 
+    }
   }
 
   async getTenantAccessToken(appId, appSecret) {
@@ -83,16 +97,19 @@ class FeishuService {
 
   async fetchRecords() {
     const config = this.getConfig();
-    if (!config) return MOCK_DATA;
+    if (!config) return MOCK_DATA; // 没有配置时，显示演示数据
+    
     try {
       const token = await this.getTenantAccessToken(config.appId, config.appSecret);
-      if (!token) return MOCK_DATA;
+      if (!token) throw new Error("无法获取 Access Token，请检查 App ID 和 Secret");
+      
       const data = await this.request(`/bitable/v1/apps/${config.appToken}/tables/${config.tableId}/records?page_size=500&sort=["记录日期 DESC"]`, 'GET', null, token);
       return data ? data.items : [];
     } catch (e) { 
-      // [FIX] 如果 API 请求失败（比如配置错误），降级显示演示数据，而不是白屏
-      console.warn("Fetch records failed, falling back to mock data:", e);
-      return MOCK_DATA; 
+      console.error("Fetch records failed:", e);
+      // [UPDATED] 如果有配置但报错，返回空数组（而不是 Mock Data），并在控制台报错
+      // 这样用户能意识到是连接出了问题，而不是以为在用演示版
+      return []; 
     }
   }
 
@@ -112,11 +129,16 @@ class FeishuService {
     const fullContent = rawInput + (data.content ? `\n\n【备注】\n${data.content}` : "");
 
     const fields = {
-      "标题": smartTitle || "无标题记录", "内容": fullContent, 
-      "设备来源": data.deviceSource || "PC", "状态": data.status || "Inbox", 
-      "类型": data.type || "灵感",  "优先级": data.priority || "普通",
-      "分类": data.category || "Inbox", "内容方向": data.direction || "灵感",
-      "信息来源": data.infoSource || "其他", "记录日期": Date.now() 
+      "标题": smartTitle || "无标题记录", 
+      "内容": fullContent, 
+      "设备来源": data.deviceSource || "PC", 
+      "状态": data.status || "Inbox", 
+      "类型": data.type || "灵感",  
+      "优先级": data.priority || "普通",
+      "分类": data.category || "Inbox", 
+      "内容方向": data.direction || "灵感",
+      "信息来源": data.infoSource || "其他", 
+      "记录日期": Date.now() 
     };
     if (data.nextActions && data.nextActions.length > 0) fields["下一步"] = data.nextActions;
     if (data.dueDate) fields["截止日期"] = new Date(data.dueDate).getTime();
@@ -138,11 +160,20 @@ class FeishuService {
   async createTable(appId, appSecret, appToken) {
     console.log("🚀 开始自动创建飞书表格...");
     const token = await this.getTenantAccessToken(appId, appSecret);
+    if (!token) throw new Error("无法获取 Token，请检查 App ID 和 Secret");
 
-    const tableRes = await this.request(`/bitable/v1/apps/${appToken}/tables`, 'POST', { table: { name: "LifeOS数据表" } }, token);
-    if (!tableRes || !tableRes.table_id) throw new Error("创建表格失败，未返回 Table ID。");
+    const tableRes = await this.request(`/bitable/v1/apps/${appToken}/tables`, 'POST', {
+      table: { name: "LifeOS数据表" }
+    }, token);
+
+    // [FIX] 增加更强的空值检查
+    if (!tableRes || !tableRes.table_id) {
+        throw new Error("创建表格请求成功但未返回 Table ID。请确认 Base ID 是否正确。");
+    }
 
     const tableId = tableRes.table_id;
+    console.log(`✅ 表格创建成功: ${tableId}`);
+
     const fieldsRes = await this.request(`/bitable/v1/apps/${appToken}/tables/${tableId}/fields`, 'GET', null, token);
     const primaryFieldId = fieldsRes.items[0].field_id;
     await this.request(`/bitable/v1/apps/${appToken}/tables/${tableId}/fields/${primaryFieldId}`, 'PUT', { field_name: "标题" }, token);
@@ -162,7 +193,9 @@ class FeishuService {
       { field_name: "记录日期", type: 5 } 
     ];
 
-    for (const field of fieldsToCreate) { await this.request(`/bitable/v1/apps/${appToken}/tables/${tableId}/fields`, 'POST', field, token); }
+    for (const field of fieldsToCreate) {
+      await this.request(`/bitable/v1/apps/${appToken}/tables/${tableId}/fields`, 'POST', field, token);
+    }
     return tableId;
   }
 }
@@ -253,6 +286,7 @@ const EditRecordModal = ({ isOpen, record, onClose, onSave }) => {
            <label className="text-xs font-bold text-slate-500 uppercase block mb-1">内容 / 备注</label>
            <textarea className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-slate-300 focus:border-indigo-500 outline-none resize-none h-24" value={formData["内容"] || ""} onChange={e => setFormData({...formData, "内容": e.target.value})} />
         </div>
+        
         <div className="grid grid-cols-2 gap-4">
            <div>
               <label className="text-xs font-bold text-slate-500 uppercase block mb-1">状态</label>
@@ -267,6 +301,7 @@ const EditRecordModal = ({ isOpen, record, onClose, onSave }) => {
               </select>
            </div>
         </div>
+
         <div className="grid grid-cols-2 gap-4">
            <div>
               <label className="text-xs font-bold text-slate-500 uppercase block mb-1">类型</label>
@@ -279,10 +314,12 @@ const EditRecordModal = ({ isOpen, record, onClose, onSave }) => {
               <input type="date" className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-slate-300 outline-none" value={formData["截止日期"] || ""} onChange={e => setFormData({...formData, "截止日期": e.target.value})} />
            </div>
         </div>
+
         <div>
            <label className="text-xs font-bold text-slate-500 uppercase block mb-1">内容方向</label>
            <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">{directions.map(d => <button key={d} onClick={() => setFormData({...formData, "内容方向": d})} className={`px-2 py-1 rounded border text-xs whitespace-nowrap ${formData["内容方向"] === d ? 'bg-indigo-500/20 border-indigo-500 text-indigo-300' : 'bg-slate-950 border-slate-800 text-slate-500'}`}>{d}</button>)}</div>
         </div>
+
         <div>
            <label className="text-xs font-bold text-slate-500 uppercase block mb-1">下一步动作</label>
            <div className="flex flex-wrap gap-2">
@@ -293,6 +330,7 @@ const EditRecordModal = ({ isOpen, record, onClose, onSave }) => {
              ))}
            </div>
         </div>
+
         <button onClick={handleSave} className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 rounded-xl transition-colors mt-4">保存修改</button>
       </div>
     </Dialog>
