@@ -15,18 +15,32 @@ import {
 
 // --- CONFIGURATION ---
 const TUTORIAL_URL = "https://ai.feishu.cn/docx/SaxxdrgJkoACzUx2LOBcLknqnQf"; 
-const TEMPLATE_URL = "https://ai.feishu.cn/base/CJQBbksPWaMfzlsatFPcFKWAnLd?from=from_copylink";
 
 /**
  * --- UTILS: MOCK DATA ---
  */
 const MOCK_DATA = [
-  { id: '101', fields: { "标题": "👋 欢迎使用 LifeOS！(点击我编辑)", "内容": "这是一个演示条目。点击卡片可以打开详情页，修改优先级、分类等信息。", "状态": "收件箱", "分类": "收件箱", "类型": "灵感", "优先级": "普通", "记录日期": Date.now() } },
-  { id: '102', fields: { "标题": "🔥 完成今日紧急任务", "状态": "待办", "分类": "工作", "类型": "任务", "优先级": "紧急", "截止日期": Date.now(), "记录日期": Date.now() - 100000 } },
+  { id: '101', fields: { "标题": "👋 欢迎使用 LifeOS！(点击我编辑)", "内容": "这是一个演示条目。", "状态": "收件箱", "分类": "收件箱", "类型": "灵感", "优先级": "普通", "记录日期": Date.now() } },
+  { id: '102', fields: { "标题": "🔥 完成今日紧急任务 #工作", "状态": "待办", "分类": "工作", "类型": "任务", "优先级": "紧急", "截止日期": Date.now(), "记录日期": Date.now() - 100000, "标签": ["工作"] } },
   { id: '103', fields: { "标题": "研究 Next.js 14", "状态": "进行中", "分类": "工作", "类型": "任务", "优先级": "普通", "记录日期": Date.now() - 200000 } },
   { id: '104', fields: { "标题": "已完成的任务示例", "状态": "已完成", "分类": "生活", "类型": "任务", "优先级": "普通", "截止日期": Date.now(), "记录日期": Date.now() - 300000 } },
-  { id: '105', fields: { "标题": "关于效率工具的思考", "内容": "工具只是手段，目的是...", "状态": "已完成", "分类": "生活", "类型": "笔记", "标签": ["PKM"], "记录日期": Date.now() - 400000 } },
+  { id: '105', fields: { "标题": "关于效率工具的思考 #PKM", "内容": "工具只是手段...", "状态": "已完成", "分类": "生活", "类型": "笔记", "标签": ["PKM"], "记录日期": Date.now() - 400000 } },
 ];
+
+/**
+ * --- UTILS: TAG EXTRACTOR ---
+ * 简单的自动标签提取：提取内容中的 #标签
+ */
+const extractTags = (text) => {
+  if (!text) return [];
+  const regex = /#(\S+)/g;
+  const matches = [];
+  let match;
+  while ((match = regex.exec(text)) !== null) {
+    matches.push(match[1]);
+  }
+  return matches;
+};
 
 /**
  * --- FEISHU SERVICE (Core Logic) ---
@@ -36,6 +50,13 @@ class FeishuService {
     this.STORAGE_KEY = 'lifeos_feishu_config';
     this.API_BASE = '/api/feishu'; 
     this.isPreview = typeof window !== 'undefined' && window.location.protocol === 'blob:';
+    
+    // [UPDATED] 必需字段列表：移除了 "信息来源"
+    this.REQUIRED_FIELDS = [
+      "标题", "内容", "状态", "类型", "优先级", 
+      "内容方向", "设备来源", "标签", "下一步", 
+      "截止日期", "记录日期"
+    ];
   }
 
   getConfig() { 
@@ -79,8 +100,19 @@ class FeishuService {
       }
 
       const result = await response.json();
+      
+      if (result.code === 1254045) {
+        throw new Error(`字段名不匹配！请检查飞书表格列名是否包含：\n${this.REQUIRED_FIELDS.join('、')}`);
+      }
+
+      if (result.code === 1254001 || result.msg?.toLowerCase().includes("permission") || result.msg?.toLowerCase().includes("forbidden")) {
+        throw new Error("🚫 无权限操作表格！\n请点击飞书表格右上角的「...」\n选择「添加文档应用」\n搜索并添加你的机器人应用。");
+      }
+      
       if (result.code !== 0) throw new Error(`Feishu API Error [${result.code}]: ${result.msg}`);
+      
       return result.data || result;
+      
     } catch (error) { 
         console.error("API Request Failed:", error); 
         throw error; 
@@ -121,6 +153,13 @@ class FeishuService {
     const smartTitle = firstLine.length > 40 ? firstLine.substring(0, 40) + "..." : firstLine;
     const fullContent = rawInput + (data.content ? `\n\n【备注】\n${data.content}` : "");
 
+    // [UPDATED] 自动提取标签
+    let autoTags = extractTags(rawInput + " " + fullContent);
+    // 如果没有提取到标签，且有分类，则默认把分类作为一个标签（可选逻辑）
+    if (autoTags.length === 0 && data.category && data.category !== 'Inbox' && data.category !== '收件箱') {
+        autoTags.push(data.category);
+    }
+
     const fields = {
       "标题": smartTitle || "无标题记录", 
       "内容": fullContent, 
@@ -128,14 +167,16 @@ class FeishuService {
       "状态": data.status || "收件箱", 
       "类型": data.type || "灵感",  
       "优先级": data.priority || "普通",
-      "分类": data.category || "收件箱", 
+      ...(data.category ? { "分类": data.category } : {}),
       "内容方向": data.direction || "灵感",
-      "信息来源": data.infoSource || "其他", 
       "记录日期": Date.now() 
     };
+    
+    // [UPDATED] 移除了信息来源
+    
     if (data.nextActions && data.nextActions.length > 0) fields["下一步"] = data.nextActions;
     if (data.dueDate) fields["截止日期"] = new Date(data.dueDate).getTime();
-    if (data.tags && data.tags.length > 0) fields["标签"] = data.tags;
+    if (autoTags.length > 0) fields["标签"] = autoTags;
     
     return await this.request(`/bitable/v1/apps/${config.appToken}/tables/${config.tableId}/records`, 'POST', { fields }, token);
   }
@@ -148,6 +189,40 @@ class FeishuService {
   async deleteRecord(recordId) {
     const { config, token } = await this.checkConfigOrThrow();
     return await this.request(`/bitable/v1/apps/${config.appToken}/tables/${config.tableId}/records/${recordId}`, 'DELETE', null, token);
+  }
+
+  async createTable(appId, appSecret, appToken) {
+    const token = await this.getTenantAccessToken(appId, appSecret);
+    const tableName = `LifeOS_${Date.now()}`;
+    const tableRes = await this.request(`/bitable/v1/apps/${appToken}/tables`, 'POST', { table: { name: tableName } }, token);
+
+    if (!tableRes || !tableRes.table_id) throw new Error("创建表格失败，未返回 Table ID。");
+
+    const tableId = tableRes.table_id;
+    const fieldsRes = await this.request(`/bitable/v1/apps/${appToken}/tables/${tableId}/fields`, 'GET', null, token);
+    const primaryFieldId = fieldsRes.items[0].field_id;
+    await this.request(`/bitable/v1/apps/${appToken}/tables/${tableId}/fields/${primaryFieldId}`, 'PUT', { field_name: "标题" }, token);
+
+    // [UPDATED] 移除了信息来源
+    const fieldsToCreate = [
+      { field_name: "内容", type: 1 },
+      { field_name: "状态", type: 3, property: { options: [{ name: "收件箱" }, { name: "待办" }, { name: "进行中" }, { name: "已完成" }] } },
+      { field_name: "来源", type: 3, property: { options: [{ name: "Mobile" }, { name: "PC" }] } },
+      { field_name: "分类", type: 3, property: { options: [{ name: "收件箱" }, { name: "工作" }, { name: "生活" }, { name: "灵感" }, { name: "阅读" }] } },
+      { field_name: "标签", type: 4 },
+      { field_name: "类型", type: 3, property: { options: [{ name: "灵感" }, { name: "任务" }, { name: "笔记" }, { name: "日记" }] } },
+      { field_name: "优先级", type: 3, property: { options: [{ name: "紧急" }, { name: "普通" }, { name: "不急" }] } },
+      { field_name: "下一步", type: 4, property: { options: [{ name: "学习" }, { name: "整理" }, { name: "收藏使用" }, { name: "分享" }, { name: "待办" }] } },
+      { field_name: "内容方向", type: 3, property: { options: [{ name: "灵感" }, { name: "AI" }, { name: "提效工具" }, { name: "个人成长" }, { name: "自媒体" }, { name: "日记" }] } },
+      { field_name: "设备来源", type: 3, property: { options: [{ name: "Mobile" }, { name: "PC" }] } },
+      { field_name: "截止日期", type: 5 },
+      { field_name: "记录日期", type: 5 } 
+    ];
+
+    for (const field of fieldsToCreate) {
+      await this.request(`/bitable/v1/apps/${appToken}/tables/${tableId}/fields`, 'POST', field, token);
+    }
+    return tableId;
   }
 }
 
@@ -193,15 +268,18 @@ const EditRecordModal = ({ isOpen, record, onClose, onSave }) => {
 
   useEffect(() => {
     if (record) {
+      const tags = record.fields["标签"] || [];
+      const tagsStr = Array.isArray(tags) ? tags.join(", ") : tags;
+
       setFormData({
         "标题": record.fields["标题"] || "",
         "内容": record.fields["内容"] || "",
         "状态": record.fields["状态"] || "收件箱",
         "类型": record.fields["类型"] || "灵感", 
         "优先级": record.fields["优先级"] || "普通",
-        "分类": record.fields["分类"] || "收件箱",
+        "分类": record.fields["分类"] || "", 
+        "标签": tagsStr, 
         "内容方向": record.fields["内容方向"] || "灵感",
-        "信息来源": record.fields["信息来源"] || "其他",
         "下一步": record.fields["下一步"] || [],
         "截止日期": record.fields["截止日期"] ? new Date(record.fields["截止日期"]).toISOString().split('T')[0] : ""
       });
@@ -215,6 +293,14 @@ const EditRecordModal = ({ isOpen, record, onClose, onSave }) => {
     } else {
        fieldsToSave["截止日期"] = null;
     }
+    
+    // 标签处理
+    if (fieldsToSave["标签"]) {
+        fieldsToSave["标签"] = fieldsToSave["标签"].split(/[,，]/).map(t => t.trim()).filter(Boolean);
+    } else {
+        fieldsToSave["标签"] = null;
+    }
+
     onSave(record.id, fieldsToSave);
   };
 
@@ -236,6 +322,15 @@ const EditRecordModal = ({ isOpen, record, onClose, onSave }) => {
         <div>
            <label className="text-xs font-bold text-slate-500 uppercase block mb-1">内容 / 备注</label>
            <textarea className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-slate-300 focus:border-indigo-500 outline-none resize-none h-24" value={formData["内容"] || ""} onChange={e => setFormData({...formData, "内容": e.target.value})} />
+        </div>
+        
+        {/* 标签 (自动或手动) */}
+        <div>
+           <label className="text-xs font-bold text-slate-500 uppercase block mb-1">标签 (支持 #话题 自动提取)</label>
+           <div className="flex items-center gap-2 bg-slate-950 border border-slate-800 rounded-lg p-2">
+             <Hash size={16} className="text-slate-500" />
+             <input className="w-full bg-transparent text-slate-300 outline-none" placeholder="AI, 效率" value={formData["标签"] || ""} onChange={e => setFormData({...formData, "标签": e.target.value})} />
+           </div>
         </div>
         
         <div className="grid grid-cols-2 gap-4">
@@ -264,6 +359,14 @@ const EditRecordModal = ({ isOpen, record, onClose, onSave }) => {
               <label className="text-xs font-bold text-slate-500 uppercase block mb-1">截止日期</label>
               <input type="date" className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-slate-300 outline-none" value={formData["截止日期"] || ""} onChange={e => setFormData({...formData, "截止日期": e.target.value})} />
            </div>
+        </div>
+        
+        <div>
+           <label className="text-xs font-bold text-slate-500 uppercase block mb-1">分类 (可选)</label>
+           <select className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-slate-300 outline-none" value={formData["分类"] || ""} onChange={e => setFormData({...formData, "分类": e.target.value})}>
+              <option value="">(无)</option>
+              {['收件箱', '工作', '生活', '灵感', '阅读'].map(o => <option key={o} value={o}>{o}</option>)}
+           </select>
         </div>
 
         <div>
@@ -432,7 +535,8 @@ const FieldGuide = () => {
               <div className="p-1.5 bg-slate-900 rounded border border-slate-800">优先级 (单选: 紧急/普通/不急)</div>
               <div className="p-1.5 bg-slate-900 rounded border border-slate-800">下一步 (多选: 学习/整理/分享...)</div>
               <div className="p-1.5 bg-slate-900 rounded border border-slate-800">内容方向 (单选)</div>
-              <div className="p-1.5 bg-slate-900 rounded border border-slate-800">信息来源 (单选)</div>
+              <div className="p-1.5 bg-slate-900 rounded border border-slate-800">设备来源 (单选: Mobile/PC)</div>
+              <div className="p-1.5 bg-slate-900 rounded border border-slate-800">标签 (多选/文本)</div>
               <div className="p-1.5 bg-slate-900 rounded border border-slate-800">截止日期 (日期)</div>
               <div className="p-1.5 bg-slate-900 rounded border border-slate-800">记录日期 (日期)</div>
            </div>
@@ -444,6 +548,7 @@ const FieldGuide = () => {
 
 const SettingsScreen = ({ onSave, onCancel, initialConfig, notify, onLogout }) => {
   const [formData, setFormData] = useState({ appId: initialConfig?.appId || '', appSecret: initialConfig?.appSecret || '', appToken: initialConfig?.appToken || '', tableId: initialConfig?.tableId || '', });
+  const [isCreatingTable, setIsCreatingTable] = useState(false);
   const handleSubmit = (e) => { e.preventDefault(); onSave(formData); };
   const TEMPLATE_URL = "https://ai.feishu.cn/base/CJQBbksPWaMfzlsatFPcFKWAnLd?from=from_copylink";
 
@@ -774,7 +879,6 @@ const DesktopView = ({ onLogout, onSettings, notify, isDemoMode, onGoHome }) => 
                       <p className="text-xs text-slate-500 line-clamp-2 mb-2">{item.fields["内容"]}</p>
                       <div className="flex gap-2">
                         <span className="text-[10px] bg-slate-800 px-1.5 py-0.5 rounded text-slate-500 border border-slate-700">{item.fields["内容方向"]}</span>
-                        <span className="text-[10px] bg-slate-800 px-1.5 py-0.5 rounded text-slate-500 border border-slate-700">{item.fields["信息来源"]}</span>
                       </div>
                       <div className="flex gap-2 mt-3 opacity-0 group-hover:opacity-100 transition-opacity">
                         <button onClick={(e) => { e.stopPropagation(); handleUpdateStatus(item.id, '待办'); }} className="text-xs bg-slate-800 hover:bg-blue-500/20 hover:text-blue-300 px-3 py-1 rounded border border-slate-700 transition-colors">转为待办</button>
