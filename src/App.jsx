@@ -53,11 +53,24 @@ class FeishuService {
     if (token) headers['Authorization'] = `Bearer ${token}`;
     try {
       const response = await fetch(`${this.API_BASE}${endpoint}`, { method, headers, body: body ? JSON.stringify(body) : null });
-      if (!response.ok) { console.warn("Network response was not ok, falling back to demo mode."); return null; }
+      if (!response.ok) {
+        let errorMsg = `HTTP Error ${response.status}`;
+        try {
+            const errData = await response.json();
+            errorMsg = `API Error: ${errData.msg || errData.message || JSON.stringify(errData)}`;
+        } catch (e) {
+            const text = await response.text();
+            if (text) errorMsg = `API Error: ${text}`;
+        }
+        throw new Error(errorMsg);
+      }
       const result = await response.json();
       if (result.code !== 0) throw new Error(`Feishu API Error [${result.code}]: ${result.msg}`);
       return result.data;
-    } catch (error) { console.error("API Request Failed:", error); throw error; }
+    } catch (error) { 
+        console.error("API Request Failed:", error); 
+        throw error; 
+    }
   }
 
   async getTenantAccessToken(appId, appSecret) {
@@ -67,13 +80,13 @@ class FeishuService {
 
   async fetchRecords() {
     const config = this.getConfig();
-    if (!config) return MOCK_DATA;
-    try {
-      const token = await this.getTenantAccessToken(config.appId, config.appSecret);
-      if (!token) return MOCK_DATA;
-      const data = await this.request(`/bitable/v1/apps/${config.appToken}/tables/${config.tableId}/records?page_size=500&sort=["记录日期 DESC"]`, 'GET', null, token);
-      return data ? data.items : MOCK_DATA;
-    } catch (e) { return MOCK_DATA; }
+    if (!config) return MOCK_DATA; // Explicit Demo Mode
+    
+    // [FIXED] Do NOT catch errors here. Let them bubble up so the UI knows the connection failed.
+    // Previously, catch(e) { return MOCK_DATA } masked the errors.
+    const token = await this.getTenantAccessToken(config.appId, config.appSecret);
+    const data = await this.request(`/bitable/v1/apps/${config.appToken}/tables/${config.tableId}/records?page_size=500&sort=["记录日期 DESC"]`, 'GET', null, token);
+    return data ? data.items : [];
   }
 
   async checkConfigOrThrow() {
@@ -120,17 +133,18 @@ class FeishuService {
     return await this.request(`/bitable/v1/apps/${config.appToken}/tables/${config.tableId}/records/${recordId}`, 'DELETE', null, token);
   }
 
-  // --- [RESTORED] 真实自动建表逻辑 ---
   async createTable(appId, appSecret, appToken) {
     console.log("🚀 开始自动创建飞书表格...");
     const token = await this.getTenantAccessToken(appId, appSecret);
-
     const tableRes = await this.request(`/bitable/v1/apps/${appToken}/tables`, 'POST', {
       table: { name: "LifeOS数据表" }
     }, token);
-    const tableId = tableRes.table_id;
-    console.log(`✅ 表格创建成功: ${tableId}`);
 
+    if (!tableRes || !tableRes.table_id) {
+        throw new Error("创建表格失败，未返回 Table ID。请检查 Base ID 是否正确，或是否拥有编辑权限。");
+    }
+
+    const tableId = tableRes.table_id;
     const fieldsRes = await this.request(`/bitable/v1/apps/${appToken}/tables/${tableId}/fields`, 'GET', null, token);
     const primaryFieldId = fieldsRes.items[0].field_id;
     await this.request(`/bitable/v1/apps/${appToken}/tables/${tableId}/fields/${primaryFieldId}`, 'PUT', { field_name: "标题" }, token);
@@ -147,7 +161,7 @@ class FeishuService {
       { field_name: "内容方向", type: 3, property: { options: [{ name: "灵感" }, { name: "AI" }, { name: "提效工具" }, { name: "个人成长" }, { name: "自媒体" }, { name: "日记" }] } },
       { field_name: "信息来源", type: 3, property: { options: [{ name: "推特" }, { name: "微信群" }, { name: "公众号" }, { name: "即刻" }, { name: "小红书" }, { name: "Youtube" }, { name: "其他" }] } },
       { field_name: "截止日期", type: 5 },
-      { field_name: "记录日期", type: 5 } // [UPDATED] 修改为日期类型 (Type 5)
+      { field_name: "记录日期", type: 5 } 
     ];
 
     for (const field of fieldsToCreate) {
@@ -751,8 +765,8 @@ const DesktopView = ({ onLogout, onSettings, notify, isDemoMode, onGoHome }) => 
                       {[...journalItems, ...knowledgeItems].slice(0, 3).map(item => (
                          <div key={item.id} onClick={() => setEditingItem(item)} className="flex items-center justify-between p-3 hover:bg-slate-800 rounded-xl transition-colors cursor-pointer group">
                             <div className="flex items-center gap-3">
-                               <div className={`p-2 rounded-lg ${item.fields["类型"] === 'Journal' ? 'bg-amber-500/10 text-amber-400' : 'bg-emerald-500/10 text-emerald-400'}`}>
-                                  {item.fields["类型"] === 'Journal' ? <PenTool size={14}/> : <BookOpen size={14}/>}
+                               <div className={`p-2 rounded-lg ${item.fields["类型"] === '日记' ? 'bg-amber-500/10 text-amber-400' : 'bg-emerald-500/10 text-emerald-400'}`}>
+                                  {item.fields["类型"] === '日记' ? <PenTool size={14}/> : <BookOpen size={14}/>}
                                </div>
                                <span className="text-slate-300 text-sm truncate max-w-[200px]">{item.fields["标题"]}</span>
                             </div>
@@ -864,7 +878,7 @@ export default function App() {
 
   const notify = (msg, type = "info") => setNotification({ message: msg, type });
   const handleSaveConfig = (newConfig) => { feishuService.saveConfig(newConfig); setConfig(newConfig); setIsConfiguring(false); setShowWelcome(false); };
-  const handleLogout = () => { if (confirm("确定要断开与飞书的连接并清除本地密钥吗？")) { feishuService.clearConfig(); setConfig(null); setShowWelcome(true); setIsConfiguring(false); } };
+  const handleLogout = () => { if (confirm("确定要断开连接吗？")) { feishuService.clearConfig(); setConfig(null); setShowWelcome(true); setIsConfiguring(false); } };
   const handleOpenSettings = () => setIsConfiguring(true);
 
   return (
@@ -873,7 +887,7 @@ export default function App() {
       {showWelcome && !isConfiguring ? (
         <WelcomeScreen onStart={() => { setShowWelcome(false); setIsConfiguring(false); }} />
       ) : isConfiguring ? (
-        <SettingsScreen onSave={handleSaveConfig} notify={notify} onCancel={() => { if (config) { setIsConfiguring(false); } else { setIsConfiguring(false); setShowWelcome(false); } }} initialConfig={config} onLogout={handleLogout} />
+        <SettingsScreen onSave={handleSaveConfig} notify={notify} onCancel={() => { if (config) setIsConfiguring(false); else setShowWelcome(true); }} initialConfig={config} onLogout={handleLogout} />
       ) : isMobile ? (
         <MobileView onSettings={handleOpenSettings} notify={notify} />
       ) : (
