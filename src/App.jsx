@@ -35,6 +35,13 @@ class FeishuService {
     this.STORAGE_KEY = 'lifeos_feishu_config';
     this.API_BASE = '/api/feishu'; 
     this.isPreview = typeof window !== 'undefined' && window.location.protocol === 'blob:';
+    
+    // 定义核心字段列表，用于错误提示
+    this.REQUIRED_FIELDS = [
+      "标题", "内容", "状态", "类型", "优先级", "分类", 
+      "内容方向", "信息来源", "设备来源", "标签", "下一步", 
+      "截止日期", "记录日期"
+    ];
   }
 
   getConfig() { 
@@ -78,10 +85,14 @@ class FeishuService {
       }
 
       const result = await response.json();
+      
+      // [FIX] 针对 FieldNameNotFound (1254045) 进行特殊错误提示
+      if (result.code === 1254045) {
+        throw new Error(`字段名不匹配！请检查飞书表格列名是否包含以下所有字段：\n${this.REQUIRED_FIELDS.join('、')}`);
+      }
+      
       if (result.code !== 0) throw new Error(`Feishu API Error [${result.code}]: ${result.msg}`);
       
-      // [FIXED] 飞书 Auth 接口返回的数据在 root 层级，而 Bitable 在 data 层级
-      // 这里做一个智能判断，优先返回 data，如果没有 data 但有内容，则返回 result 本身
       return result.data || result;
       
     } catch (error) { 
@@ -97,19 +108,16 @@ class FeishuService {
 
   async fetchRecords() {
     const config = this.getConfig();
-    if (!config) return MOCK_DATA; // 没有配置时，显示演示数据
-    
+    if (!config) return MOCK_DATA; 
     try {
       const token = await this.getTenantAccessToken(config.appId, config.appSecret);
-      if (!token) throw new Error("无法获取 Access Token，请检查 App ID 和 Secret");
-      
+      if (!token) return MOCK_DATA;
+      // 增加 sort 参数确保最新日期在前
       const data = await this.request(`/bitable/v1/apps/${config.appToken}/tables/${config.tableId}/records?page_size=500&sort=["记录日期 DESC"]`, 'GET', null, token);
       return data ? data.items : [];
     } catch (e) { 
-      console.error("Fetch records failed:", e);
-      // [UPDATED] 如果有配置但报错，返回空数组（而不是 Mock Data），并在控制台报错
-      // 这样用户能意识到是连接出了问题，而不是以为在用演示版
-      return []; 
+      console.warn("Fetch records failed, falling back to mock data:", e);
+      return MOCK_DATA; 
     }
   }
 
@@ -157,18 +165,19 @@ class FeishuService {
     return await this.request(`/bitable/v1/apps/${config.appToken}/tables/${config.tableId}/records/${recordId}`, 'DELETE', null, token);
   }
 
+  // --- 自动建表 ---
   async createTable(appId, appSecret, appToken) {
     console.log("🚀 开始自动创建飞书表格...");
     const token = await this.getTenantAccessToken(appId, appSecret);
-    if (!token) throw new Error("无法获取 Token，请检查 App ID 和 Secret");
 
+    // [FIX] 使用时间戳作为后缀，避免 1254013 (TableNameDuplicated) 错误
+    const tableName = `LifeOS_${Date.now()}`;
     const tableRes = await this.request(`/bitable/v1/apps/${appToken}/tables`, 'POST', {
-      table: { name: "LifeOS数据表" }
+      table: { name: tableName }
     }, token);
 
-    // [FIX] 增加更强的空值检查
     if (!tableRes || !tableRes.table_id) {
-        throw new Error("创建表格请求成功但未返回 Table ID。请确认 Base ID 是否正确。");
+        throw new Error("创建表格失败，未返回 Table ID。请检查 Base ID 是否正确，或是否拥有编辑权限。");
     }
 
     const tableId = tableRes.table_id;
@@ -182,6 +191,7 @@ class FeishuService {
       { field_name: "内容", type: 1 },
       { field_name: "状态", type: 3, property: { options: [{ name: "Inbox" }, { name: "Todo" }, { name: "Doing" }, { name: "Done" }] } },
       { field_name: "来源", type: 3, property: { options: [{ name: "Mobile" }, { name: "PC" }] } },
+      { field_name: "设备来源", type: 3, property: { options: [{ name: "Mobile" }, { name: "PC" }] } }, // 补充缺失字段
       { field_name: "分类", type: 3, property: { options: [{ name: "Inbox" }, { name: "Work" }, { name: "Life" }, { name: "Idea" }, { name: "Reading" }] } },
       { field_name: "标签", type: 4 },
       { field_name: "类型", type: 3, property: { options: [{ name: "灵感" }, { name: "任务" }, { name: "笔记" }, { name: "日记" }] } },
@@ -482,6 +492,7 @@ const FieldGuide = () => {
               <div className="p-1.5 bg-slate-900 rounded border border-slate-800">下一步 (多选: 学习/整理/分享...)</div>
               <div className="p-1.5 bg-slate-900 rounded border border-slate-800">内容方向 (单选)</div>
               <div className="p-1.5 bg-slate-900 rounded border border-slate-800">信息来源 (单选)</div>
+              <div className="p-1.5 bg-slate-900 rounded border border-slate-800">设备来源 (单选: Mobile/PC)</div>
               <div className="p-1.5 bg-slate-900 rounded border border-slate-800">截止日期 (日期)</div>
               <div className="p-1.5 bg-slate-900 rounded border border-slate-800">记录日期 (日期)</div>
            </div>
