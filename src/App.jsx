@@ -20,10 +20,11 @@ const TUTORIAL_URL = "https://ai.feishu.cn/docx/SaxxdrgJkoACzUx2LOBcLknqnQf";
  * --- UTILS: MOCK DATA ---
  */
 const MOCK_DATA = [
-  { id: '101', fields: { "标题": "👋 欢迎使用 LifeOS！(点击我编辑)", "内容": "这是一个演示条目。", "状态": "收件箱", "分类": "收件箱", "类型": "灵感", "优先级": "普通", "记录日期": Date.now() } },
+  { id: '101', fields: { "标题": "👋 欢迎使用 LifeOS！(点击我编辑)", "内容": "这是一个演示条目。点击卡片可以打开详情页，修改优先级、分类等信息。", "状态": "收件箱", "分类": "收件箱", "类型": "灵感", "优先级": "普通", "记录日期": Date.now() } },
   { id: '102', fields: { "标题": "🔥 完成今日紧急任务", "状态": "待办", "分类": "工作", "类型": "任务", "优先级": "紧急", "截止日期": Date.now(), "记录日期": Date.now() - 100000 } },
   { id: '103', fields: { "标题": "研究 Next.js 14", "状态": "进行中", "分类": "工作", "类型": "任务", "优先级": "普通", "记录日期": Date.now() - 200000 } },
   { id: '104', fields: { "标题": "已完成的任务示例", "状态": "已完成", "分类": "生活", "类型": "任务", "优先级": "普通", "截止日期": Date.now(), "记录日期": Date.now() - 300000 } },
+  { id: '105', fields: { "标题": "关于效率工具的思考", "内容": "工具只是手段，目的是...", "状态": "已完成", "分类": "生活", "类型": "笔记", "标签": ["PKM"], "记录日期": Date.now() - 400000 } },
 ];
 
 /**
@@ -96,7 +97,9 @@ class FeishuService {
     try {
       const token = await this.getTenantAccessToken(config.appId, config.appSecret);
       if (!token) return MOCK_DATA;
-      const data = await this.request(`/bitable/v1/apps/${config.appToken}/tables/${config.tableId}/records?page_size=500&sort=["记录日期 DESC"]`, 'GET', null, token);
+      // [UPDATED] 使用 encodeURIComponent 处理排序参数，防止 URL 解析错误
+      const sortParam = encodeURIComponent('["记录日期 DESC"]');
+      const data = await this.request(`/bitable/v1/apps/${config.appToken}/tables/${config.tableId}/records?page_size=500&sort=${sortParam}`, 'GET', null, token);
       return data ? data.items : [];
     } catch (e) { 
       console.warn("Fetch records failed, using mock data:", e);
@@ -119,7 +122,6 @@ class FeishuService {
     const smartTitle = firstLine.length > 40 ? firstLine.substring(0, 40) + "..." : firstLine;
     const fullContent = rawInput + (data.content ? `\n\n【备注】\n${data.content}` : "");
 
-    // [UPDATED] 使用全中文选项
     const fields = {
       "标题": smartTitle || "无标题记录", 
       "内容": fullContent, 
@@ -150,18 +152,23 @@ class FeishuService {
   }
 
   async createTable(appId, appSecret, appToken) {
+    console.log("🚀 开始自动创建飞书表格...");
     const token = await this.getTenantAccessToken(appId, appSecret);
-    const tableName = `LifeOS_${Date.now()}`;
-    const tableRes = await this.request(`/bitable/v1/apps/${appToken}/tables`, 'POST', { table: { name: tableName } }, token);
+
+    const tableRes = await this.request(`/bitable/v1/apps/${appToken}/tables`, 'POST', {
+      table: { name: "LifeOS数据表" }
+    }, token);
 
     if (!tableRes || !tableRes.table_id) throw new Error("创建表格失败，未返回 Table ID。");
 
     const tableId = tableRes.table_id;
+    console.log(`✅ 表格创建成功: ${tableId}`);
+
     const fieldsRes = await this.request(`/bitable/v1/apps/${appToken}/tables/${tableId}/fields`, 'GET', null, token);
     const primaryFieldId = fieldsRes.items[0].field_id;
     await this.request(`/bitable/v1/apps/${appToken}/tables/${tableId}/fields/${primaryFieldId}`, 'PUT', { field_name: "标题" }, token);
 
-    // [UPDATED] 这里的选项必须和上面 addRecord 以及用户手动建表保持一致
+    // [UPDATED] 使用全中文选项配置，避免 field validation failed
     const fieldsToCreate = [
       { field_name: "内容", type: 1 },
       { field_name: "状态", type: 3, property: { options: [{ name: "收件箱" }, { name: "待办" }, { name: "进行中" }, { name: "已完成" }] } },
@@ -173,6 +180,7 @@ class FeishuService {
       { field_name: "下一步", type: 4, property: { options: [{ name: "学习" }, { name: "整理" }, { name: "收藏使用" }, { name: "分享" }, { name: "待办" }] } },
       { field_name: "内容方向", type: 3, property: { options: [{ name: "灵感" }, { name: "AI" }, { name: "提效工具" }, { name: "个人成长" }, { name: "自媒体" }, { name: "日记" }] } },
       { field_name: "信息来源", type: 3, property: { options: [{ name: "推特" }, { name: "微信群" }, { name: "公众号" }, { name: "即刻" }, { name: "小红书" }, { name: "Youtube" }, { name: "其他" }] } },
+      { field_name: "设备来源", type: 3, property: { options: [{ name: "Mobile" }, { name: "PC" }] } },
       { field_name: "截止日期", type: 5 },
       { field_name: "记录日期", type: 5 } 
     ];
@@ -643,11 +651,15 @@ const DesktopView = ({ onLogout, onSettings, notify, isDemoMode, onGoHome }) => 
       const data = await feishuService.fetchRecords();
       setRecords(data);
       setInboxItems(data.filter(r => r.fields["状态"] === '收件箱'));
-      setTodoItems(data.filter(r => r.fields["状态"] === '待办'));
-      setDoingItems(data.filter(r => r.fields["状态"] === '进行中'));
-      setDoneItems(data.filter(r => r.fields["状态"] === '已完成'));
+      setTodoItems(data.filter(r => r.fields["状态"] === '待办' && r.fields["类型"] === '任务'));
+      setDoingItems(data.filter(r => r.fields["状态"] === '进行中' && r.fields["类型"] === '任务'));
+      setDoneItems(data.filter(r => r.fields["状态"] === '已完成' && r.fields["类型"] === '任务'));
       setKnowledgeItems(data.filter(r => r.fields["类型"] === '笔记' || r.fields["分类"] === '阅读'));
-      setJournalItems(data.filter(r => r.fields["类型"] === '日记' || r.fields["内容方向"] === '日记'));
+      
+      // Journal Logic: Reverse sort by time
+      const sortedJournals = data.filter(r => r.fields["类型"] === '日记' || r.fields["内容方向"] === '日记')
+        .sort((a, b) => new Date(b.fields["记录日期"]) - new Date(a.fields["记录日期"]));
+      setJournalItems(sortedJournals);
     } catch (e) { console.error(e); }
   };
 
@@ -748,7 +760,7 @@ const DesktopView = ({ onLogout, onSettings, notify, isDemoMode, onGoHome }) => 
                 <div className="md:col-span-2 bg-slate-900 border border-slate-800 p-6 rounded-3xl">
                    <div className="flex items-center gap-2 text-slate-400 text-sm font-bold uppercase tracking-wider mb-4"><Calendar size={14}/> 今日任务</div>
                    <div className="space-y-2">
-                      {[...todayTasks, ...completedToday].map(item => {
+                      {todayTasks.map(item => {
                         const isDone = item.fields["状态"] === '已完成';
                         return (
                           <div key={item.id} onClick={() => setEditingItem(item)} className={`flex items-center gap-3 p-3 rounded-xl border transition-all ${isDone ? 'bg-slate-900 border-slate-800 opacity-50' : 'bg-slate-800 border-slate-700 hover:border-indigo-500/50'} cursor-pointer group`}>
@@ -759,7 +771,7 @@ const DesktopView = ({ onLogout, onSettings, notify, isDemoMode, onGoHome }) => 
                           </div>
                         );
                       })}
-                      {todayTasks.length + completedToday.length === 0 && <div className="text-slate-600 text-sm text-center py-8">今日无待办任务</div>}
+                      {todayTasks.length === 0 && <div className="text-slate-600 text-sm text-center py-8">今日无待办任务</div>}
                    </div>
                 </div>
 
