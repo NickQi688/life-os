@@ -37,7 +37,19 @@ class FeishuService {
     this.isPreview = typeof window !== 'undefined' && window.location.protocol === 'blob:';
   }
 
-  getConfig() { const data = localStorage.getItem(this.STORAGE_KEY); return data ? JSON.parse(data) : null; }
+  // [FIX] 增加校验：只有当 AppID 等关键字段存在时，才认为 Config 有效
+  getConfig() { 
+    const data = localStorage.getItem(this.STORAGE_KEY); 
+    if (!data) return null;
+    try {
+      const parsed = JSON.parse(data);
+      if (parsed && parsed.appId && parsed.appSecret && parsed.appToken && parsed.tableId) {
+        return parsed;
+      }
+      return null; // 配置不完整视为空
+    } catch (e) { return null; }
+  }
+
   saveConfig(config) { localStorage.setItem(this.STORAGE_KEY, JSON.stringify(config)); }
   clearConfig() { localStorage.removeItem(this.STORAGE_KEY); }
 
@@ -55,22 +67,13 @@ class FeishuService {
       const response = await fetch(`${this.API_BASE}${endpoint}`, { method, headers, body: body ? JSON.stringify(body) : null });
       if (!response.ok) {
         let errorMsg = `HTTP Error ${response.status}`;
-        try {
-            const errData = await response.json();
-            errorMsg = `API Error: ${errData.msg || errData.message || JSON.stringify(errData)}`;
-        } catch (e) {
-            const text = await response.text();
-            if (text) errorMsg = `API Error: ${text}`;
-        }
+        try { const errData = await response.json(); errorMsg = `API Error: ${errData.msg || errData.message}`; } catch (e) {}
         throw new Error(errorMsg);
       }
       const result = await response.json();
       if (result.code !== 0) throw new Error(`Feishu API Error [${result.code}]: ${result.msg}`);
       return result.data;
-    } catch (error) { 
-        console.error("API Request Failed:", error); 
-        throw error; 
-    }
+    } catch (error) { console.error("API Request Failed:", error); throw error; }
   }
 
   async getTenantAccessToken(appId, appSecret) {
@@ -80,13 +83,17 @@ class FeishuService {
 
   async fetchRecords() {
     const config = this.getConfig();
-    if (!config) return MOCK_DATA; // Explicit Demo Mode
-    
-    // [FIXED] Do NOT catch errors here. Let them bubble up so the UI knows the connection failed.
-    // Previously, catch(e) { return MOCK_DATA } masked the errors.
-    const token = await this.getTenantAccessToken(config.appId, config.appSecret);
-    const data = await this.request(`/bitable/v1/apps/${config.appToken}/tables/${config.tableId}/records?page_size=500&sort=["记录日期 DESC"]`, 'GET', null, token);
-    return data ? data.items : [];
+    if (!config) return MOCK_DATA;
+    try {
+      const token = await this.getTenantAccessToken(config.appId, config.appSecret);
+      if (!token) return MOCK_DATA;
+      const data = await this.request(`/bitable/v1/apps/${config.appToken}/tables/${config.tableId}/records?page_size=500&sort=["记录日期 DESC"]`, 'GET', null, token);
+      return data ? data.items : [];
+    } catch (e) { 
+      // [FIX] 如果 API 请求失败（比如配置错误），降级显示演示数据，而不是白屏
+      console.warn("Fetch records failed, falling back to mock data:", e);
+      return MOCK_DATA; 
+    }
   }
 
   async checkConfigOrThrow() {
@@ -105,16 +112,11 @@ class FeishuService {
     const fullContent = rawInput + (data.content ? `\n\n【备注】\n${data.content}` : "");
 
     const fields = {
-      "标题": smartTitle || "无标题记录", 
-      "内容": fullContent, 
-      "设备来源": data.deviceSource || "PC", 
-      "状态": data.status || "Inbox", 
-      "类型": data.type || "灵感",  
-      "优先级": data.priority || "普通",
-      "分类": data.category || "Inbox", 
-      "内容方向": data.direction || "灵感",
-      "信息来源": data.infoSource || "其他", 
-      "记录日期": Date.now() 
+      "标题": smartTitle || "无标题记录", "内容": fullContent, 
+      "设备来源": data.deviceSource || "PC", "状态": data.status || "Inbox", 
+      "类型": data.type || "灵感",  "优先级": data.priority || "普通",
+      "分类": data.category || "Inbox", "内容方向": data.direction || "灵感",
+      "信息来源": data.infoSource || "其他", "记录日期": Date.now() 
     };
     if (data.nextActions && data.nextActions.length > 0) fields["下一步"] = data.nextActions;
     if (data.dueDate) fields["截止日期"] = new Date(data.dueDate).getTime();
@@ -136,13 +138,9 @@ class FeishuService {
   async createTable(appId, appSecret, appToken) {
     console.log("🚀 开始自动创建飞书表格...");
     const token = await this.getTenantAccessToken(appId, appSecret);
-    const tableRes = await this.request(`/bitable/v1/apps/${appToken}/tables`, 'POST', {
-      table: { name: "LifeOS数据表" }
-    }, token);
 
-    if (!tableRes || !tableRes.table_id) {
-        throw new Error("创建表格失败，未返回 Table ID。请检查 Base ID 是否正确，或是否拥有编辑权限。");
-    }
+    const tableRes = await this.request(`/bitable/v1/apps/${appToken}/tables`, 'POST', { table: { name: "LifeOS数据表" } }, token);
+    if (!tableRes || !tableRes.table_id) throw new Error("创建表格失败，未返回 Table ID。");
 
     const tableId = tableRes.table_id;
     const fieldsRes = await this.request(`/bitable/v1/apps/${appToken}/tables/${tableId}/fields`, 'GET', null, token);
@@ -164,9 +162,7 @@ class FeishuService {
       { field_name: "记录日期", type: 5 } 
     ];
 
-    for (const field of fieldsToCreate) {
-      await this.request(`/bitable/v1/apps/${appToken}/tables/${tableId}/fields`, 'POST', field, token);
-    }
+    for (const field of fieldsToCreate) { await this.request(`/bitable/v1/apps/${appToken}/tables/${tableId}/fields`, 'POST', field, token); }
     return tableId;
   }
 }
@@ -257,7 +253,6 @@ const EditRecordModal = ({ isOpen, record, onClose, onSave }) => {
            <label className="text-xs font-bold text-slate-500 uppercase block mb-1">内容 / 备注</label>
            <textarea className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-slate-300 focus:border-indigo-500 outline-none resize-none h-24" value={formData["内容"] || ""} onChange={e => setFormData({...formData, "内容": e.target.value})} />
         </div>
-        
         <div className="grid grid-cols-2 gap-4">
            <div>
               <label className="text-xs font-bold text-slate-500 uppercase block mb-1">状态</label>
@@ -272,7 +267,6 @@ const EditRecordModal = ({ isOpen, record, onClose, onSave }) => {
               </select>
            </div>
         </div>
-
         <div className="grid grid-cols-2 gap-4">
            <div>
               <label className="text-xs font-bold text-slate-500 uppercase block mb-1">类型</label>
@@ -285,12 +279,10 @@ const EditRecordModal = ({ isOpen, record, onClose, onSave }) => {
               <input type="date" className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-slate-300 outline-none" value={formData["截止日期"] || ""} onChange={e => setFormData({...formData, "截止日期": e.target.value})} />
            </div>
         </div>
-
         <div>
            <label className="text-xs font-bold text-slate-500 uppercase block mb-1">内容方向</label>
            <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">{directions.map(d => <button key={d} onClick={() => setFormData({...formData, "内容方向": d})} className={`px-2 py-1 rounded border text-xs whitespace-nowrap ${formData["内容方向"] === d ? 'bg-indigo-500/20 border-indigo-500 text-indigo-300' : 'bg-slate-950 border-slate-800 text-slate-500'}`}>{d}</button>)}</div>
         </div>
-
         <div>
            <label className="text-xs font-bold text-slate-500 uppercase block mb-1">下一步动作</label>
            <div className="flex flex-wrap gap-2">
@@ -301,7 +293,6 @@ const EditRecordModal = ({ isOpen, record, onClose, onSave }) => {
              ))}
            </div>
         </div>
-
         <button onClick={handleSave} className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 rounded-xl transition-colors mt-4">保存修改</button>
       </div>
     </Dialog>
@@ -879,7 +870,11 @@ export default function App() {
   const notify = (msg, type = "info") => setNotification({ message: msg, type });
   const handleSaveConfig = (newConfig) => { feishuService.saveConfig(newConfig); setConfig(newConfig); setIsConfiguring(false); setShowWelcome(false); };
   const handleLogout = () => { if (confirm("确定要断开连接吗？")) { feishuService.clearConfig(); setConfig(null); setShowWelcome(true); setIsConfiguring(false); } };
-  const handleOpenSettings = () => setIsConfiguring(true);
+  
+  // [FIX] onCancel -> force exit config mode and go to DesktopView (Demo Mode if no config)
+  const handleCancelConfig = () => { setIsConfiguring(false); setShowWelcome(false); };
+
+  const isDemoMode = !config;
 
   return (
     <>
@@ -887,11 +882,11 @@ export default function App() {
       {showWelcome && !isConfiguring ? (
         <WelcomeScreen onStart={() => { setShowWelcome(false); setIsConfiguring(false); }} />
       ) : isConfiguring ? (
-        <SettingsScreen onSave={handleSaveConfig} notify={notify} onCancel={() => { if (config) setIsConfiguring(false); else setShowWelcome(true); }} initialConfig={config} onLogout={handleLogout} />
+        <SettingsScreen onSave={handleSaveConfig} notify={notify} onCancel={handleCancelConfig} initialConfig={config} onLogout={handleLogout} />
       ) : isMobile ? (
-        <MobileView onSettings={handleOpenSettings} notify={notify} />
+        <MobileView onSettings={() => setIsConfiguring(true)} notify={notify} />
       ) : (
-        <DesktopView onLogout={handleLogout} onSettings={handleOpenSettings} notify={notify} isDemoMode={!config} onGoHome={() => setShowWelcome(true)} />
+        <DesktopView onLogout={handleLogout} onSettings={() => setIsConfiguring(true)} notify={notify} isDemoMode={isDemoMode} onGoHome={() => setShowWelcome(true)} />
       )}
     </>
   );
