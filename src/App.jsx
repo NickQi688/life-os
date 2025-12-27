@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 
 // --- CONFIGURATION ---
-const TUTORIAL_URL = "https://ai.feishu.cn/docx/SaxxdrgJkoACzUx2LOBcLknqnQf"; 
+const TUTORIAL_URL = "https://ai.feishu.cn/docx/IbF7dM1HuogviMxlfOOc1vOFn1d?from=from_copylink"; 
 const TEMPLATE_URL = "https://ai.feishu.cn/base/CJQBbksPWaMfzlsatFPcFKWAnLd?from=from_copylink";
 
 // --- CONSTANTS ---
@@ -24,6 +24,20 @@ const PRIORITY = { HIGH: "紧急", NORMAL: "普通", LOW: "不急" };
 
 // 全局统一的内容方向配置
 const CONTENT_DIRECTIONS = ["AI", "提效工具", "个人成长", "投资", "新媒体", "创业", "工作", "金句", "生活", "学习", "其他"];
+
+/**
+ * --- UTILS ---
+ */
+const extractTags = (text) => {
+  if (!text) return [];
+  const regex = /#(\S+)/g;
+  const matches = [];
+  let match;
+  while ((match = regex.exec(text)) !== null) {
+    matches.push(match[1]);
+  }
+  return matches;
+};
 
 // 问候语逻辑
 const getGreeting = () => {
@@ -48,9 +62,10 @@ const getTypeIcon = (type) => {
 };
 
 // 获取本地日期字符串 (YYYY-MM-DD)
-const getLocalDateString = (date = new Date()) => {
-  const offset = date.getTimezoneOffset() * 60000;
-  const localDate = new Date(date.getTime() - offset);
+const getLocalDateString = () => {
+  const now = new Date();
+  const offset = now.getTimezoneOffset() * 60000;
+  const localDate = new Date(now.getTime() - offset);
   return localDate.toISOString().split('T')[0];
 };
 
@@ -59,10 +74,10 @@ const getLocalDateString = (date = new Date()) => {
  */
 const MOCK_DATA = [
   { id: '101', fields: { "标题": "👋 欢迎使用 LifeOS！", "内容": "点击卡片编辑详情。", "状态": STATUS.INBOX, "类型": TYPE.IDEA, "优先级": PRIORITY.NORMAL, "内容方向": "个人成长", "来源": "PC", "记录日期": Date.now() } },
-  { id: '102', fields: { "标题": "🔥 今日紧急任务", "状态": STATUS.TODO, "类型": TYPE.TASK, "优先级": PRIORITY.HIGH, "内容方向": "提效工具", "来源": "PC", "截止日期": Date.now(), "记录日期": Date.now() - 100000 } },
+  { id: '102', fields: { "标题": "🔥 今日紧急任务", "状态": STATUS.TODO, "类型": TYPE.TASK, "优先级": PRIORITY.HIGH, "内容方向": "提效工具", "来源": "PC", "截止日期": Date.now(), "标签": ["工作"], "记录日期": Date.now() - 100000 } },
   { id: '103', fields: { "标题": "正在进行的任务", "状态": STATUS.DOING, "类型": TYPE.TASK, "优先级": PRIORITY.NORMAL, "内容方向": "提效工具", "来源": "PC", "截止日期": Date.now(), "记录日期": Date.now() - 200000 } },
   { id: '104', fields: { "标题": "已完成的任务", "状态": STATUS.DONE, "类型": TYPE.TASK, "优先级": PRIORITY.NORMAL, "内容方向": "个人成长", "来源": "Mobile", "截止日期": Date.now(), "记录日期": Date.now() - 300000 } },
-  { id: '105', fields: { "标题": "关于效率工具的思考", "内容": "工具只是手段...", "状态": STATUS.DONE, "类型": TYPE.NOTE, "内容方向": "个人成长", "来源": "PC", "记录日期": Date.now() - 400000 } },
+  { id: '105', fields: { "标题": "关于效率工具的思考 #PKM", "内容": "工具只是手段...", "状态": STATUS.DONE, "类型": TYPE.NOTE, "标签": ["PKM"], "内容方向": "个人成长", "来源": "PC", "记录日期": Date.now() - 400000 } },
 ];
 
 /**
@@ -136,10 +151,9 @@ class FeishuService {
     this.API_BASE = '/api/feishu'; 
     this.isPreview = typeof window !== 'undefined' && window.location.protocol === 'blob:';
     
-    // [UPDATED] Removed "标签"
     this.REQUIRED_FIELDS = [
       "标题", "内容", "状态", "类型", "优先级", 
-      "内容方向", "来源", "下一步", 
+      "内容方向", "来源", "标签", "下一步", 
       "截止日期", "记录日期"
     ];
   }
@@ -164,7 +178,7 @@ class FeishuService {
       await new Promise(resolve => setTimeout(resolve, 300)); 
       if (endpoint.includes('tenant_access_token')) return { tenant_access_token: 'mock_token' };
       if (endpoint.includes('/records') && method === 'GET') return { items: MOCK_DATA };
-      // Mocking fields request for preview
+      // [NEW] Mocking fields request for preview
       if (endpoint.includes('/fields')) return { items: [{ field_name: "内容方向", property: { options: CONTENT_DIRECTIONS.map(name => ({ name })) } }] };
       return { code: 0, msg: "success", data: {} };
     }
@@ -240,7 +254,6 @@ class FeishuService {
   async addRecord(data) {
     const { config, token } = await this.checkConfigOrThrow();
     
-    // [FIX] 标题自动截取：20字符
     let finalTitle = data.title;
     if (!finalTitle && data.content) {
        const firstLine = data.content.split('\n')[0];
@@ -248,6 +261,8 @@ class FeishuService {
     } else if (finalTitle && finalTitle.length > 20) {
         finalTitle = finalTitle.substring(0, 20) + "...";
     }
+
+    const autoTags = extractTags((finalTitle || "") + " " + (data.content || ""));
 
     const fields = {
       "标题": finalTitle || "无标题记录", 
@@ -261,6 +276,8 @@ class FeishuService {
     };
     if (data.nextActions && data.nextActions.length > 0) fields["下一步"] = data.nextActions;
     if (data.dueDate) fields["截止日期"] = new Date(data.dueDate).getTime();
+    if (autoTags.length > 0) fields["标签"] = autoTags;
+    else if (data.tags && data.tags.length > 0) fields["标签"] = data.tags;
     
     const res = await this.request(`/bitable/v1/apps/${config.appToken}/tables/${config.tableId}/records`, 'POST', { fields }, token);
     return res.record;
@@ -346,6 +363,7 @@ const FieldGuide = () => {
               <div className="p-1.5 bg-slate-900 rounded border border-slate-800">下一步 (多选: 学习/整理/分享...)</div>
               <div className="p-1.5 bg-slate-900 rounded border border-slate-800">内容方向 (单选)</div>
               <div className="p-1.5 bg-slate-900 rounded border border-slate-800">来源 (单选: Mobile/PC)</div>
+              <div className="p-1.5 bg-slate-900 rounded border border-slate-800">标签 (多选/文本)</div>
               <div className="p-1.5 bg-slate-900 rounded border border-slate-800">截止日期 (日期)</div>
               <div className="p-1.5 bg-slate-900 rounded border border-slate-800">记录日期 (日期)</div>
            </div>
@@ -386,7 +404,8 @@ const EditRecordModal = ({ isOpen, record, onClose, onSave, directions }) => {
 
   useEffect(() => {
     if (record) {
-      // Handle Date Input format (YYYY-MM-DD)
+      const tags = record.fields["标签"] || [];
+      const tagsStr = Array.isArray(tags) ? tags.join(", ") : (tags || "");
       let dateStr = "";
       if (record.fields["截止日期"]) { dateStr = new Date(record.fields["截止日期"]).toISOString().split('T')[0]; }
 
@@ -396,6 +415,7 @@ const EditRecordModal = ({ isOpen, record, onClose, onSave, directions }) => {
         "状态": record.fields["状态"] || STATUS.INBOX,
         "类型": record.fields["类型"] || TYPE.IDEA, 
         "优先级": record.fields["优先级"] || PRIORITY.NORMAL,
+        "标签": tagsStr,
         "内容方向": record.fields["内容方向"] || "个人成长",
         "下一步": record.fields["下一步"] || [],
         "截止日期": dateStr
@@ -407,6 +427,8 @@ const EditRecordModal = ({ isOpen, record, onClose, onSave, directions }) => {
     const fieldsToSave = { ...formData };
     if (fieldsToSave["截止日期"]) fieldsToSave["截止日期"] = new Date(fieldsToSave["截止日期"]).getTime();
     else fieldsToSave["截止日期"] = null;
+    if (fieldsToSave["标签"]) fieldsToSave["标签"] = fieldsToSave["标签"].split(/[,，]/).map(t => t.trim()).filter(Boolean);
+    else fieldsToSave["标签"] = null;
     onSave(record.id, fieldsToSave);
   };
   
@@ -415,7 +437,7 @@ const EditRecordModal = ({ isOpen, record, onClose, onSave, directions }) => {
     const updated = current.includes(action) ? current.filter(a => a !== action) : [...current, action];
     setFormData({ ...formData, "下一步": updated });
   };
-  
+
   const setQuickDate = (days) => {
       const date = new Date();
       date.setDate(date.getDate() + days);
@@ -438,7 +460,7 @@ const EditRecordModal = ({ isOpen, record, onClose, onSave, directions }) => {
            <div>
                <label className="text-xs font-bold text-slate-500 uppercase block mb-1">截止日期</label>
                <input type="date" className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-slate-300 outline-none" value={formData["截止日期"] || ""} onChange={e => setFormData({...formData, "截止日期": e.target.value})} />
-               {/* [NEW] Quick Date Buttons */}
+               {/* Quick Date Buttons */}
                <div className="flex gap-2 mt-2">
                    <button onClick={() => setQuickDate(0)} className="text-[10px] px-2 py-1 bg-slate-800 hover:bg-slate-700 rounded text-slate-400">今天</button>
                    <button onClick={() => setQuickDate(1)} className="text-[10px] px-2 py-1 bg-slate-800 hover:bg-slate-700 rounded text-slate-400">明天</button>
@@ -446,7 +468,7 @@ const EditRecordModal = ({ isOpen, record, onClose, onSave, directions }) => {
                </div>
            </div>
         </div>
-        <div><label className="text-xs font-bold text-slate-500 uppercase block mb-1">内容方向</label><div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">{directions.map(d => <button key={d} onClick={() => setFormData({...formData, "内容方向": d})} className={`px-2 py-1 rounded border text-xs whitespace-nowrap ${formData["内容方向"] === d ? 'bg-indigo-500/20 border-indigo-500 text-indigo-300' : 'bg-slate-950 border-slate-800 text-slate-500'}`}>{d}</button>)}</div></div>
+        <div><label className="text-xs font-bold text-slate-500 uppercase block mb-1">内容方向</label><div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">{directions.map(d => <button key={d} onClick={() => setFormData({...formData, "内容方向": d})} className={`px-2 py-1 rounded border text-xs whitespace-nowrap ${formData["内容方向"] === d ? 'bg-indigo-500/20 border-indigo-500 text-indigo-300' : 'bg-slate-900 border-slate-800 text-slate-500'}`}>{d}</button>)}</div></div>
         <div><label className="text-xs font-bold text-slate-500 uppercase block mb-1">下一步动作</label><div className="flex flex-wrap gap-2">{actionsList.map(a => (<button key={a} onClick={() => toggleAction(a)} className={`px-2 py-1 rounded border text-xs flex items-center gap-1 ${formData["下一步"]?.includes(a) ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300' : 'bg-slate-900 border-slate-800 text-slate-500'}`}>{formData["下一步"]?.includes(a) && <Check size={10}/>} {a}</button>))}</div></div>
         <button onClick={handleSave} className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 rounded-xl transition-colors mt-4">保存修改</button>
       </div>
@@ -600,8 +622,16 @@ const SettingsScreen = ({ onSave, onCancel, initialConfig, notify, onLogout }) =
              </div>
           </div>
           <FieldGuide />
+          
           <button type="submit" className="w-full mt-4 bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 px-4 rounded-xl transition-colors">保存配置</button>
           <button type="button" onClick={onCancel} className="w-full text-slate-500 hover:text-slate-300 py-2 text-sm">取消</button>
+          
+          <div className="text-center mt-2">
+            <a href={TUTORIAL_URL} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-xs text-slate-500 hover:text-indigo-400 transition-colors">
+               <BookOpen size={14} /> 
+               <span>查看完整使用说明书</span>
+            </a>
+          </div>
         </form>
         {initialConfig && <div className="mt-6 pt-6 border-t border-slate-800 text-center"><button onClick={onLogout} className="text-red-400 hover:text-red-300 text-sm flex items-center justify-center gap-2"><LogOut size={16}/> 断开连接 & 清除本地密钥</button></div>}
       </div>
