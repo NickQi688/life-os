@@ -10,7 +10,7 @@ import {
   HelpCircle, AlertTriangle, Lock, RefreshCw, Eye, ChevronDown, ChevronUp,
   User, Mail, MessageCircle, Globe, Loader2, Info, AlertCircle, Check, FileText, 
   Dices, Sliders, Book, PenTool, Hash, Layout, Search, Command, Flame, BookOpen,
-  Edit3, MoreVertical, XCircle, ExternalLink, Sparkles, Wand2, Timer, Rocket
+  Edit3, MoreVertical, XCircle, ExternalLink, Sparkles, Wand2, Timer, Rocket, Download
 } from 'lucide-react';
 
 // --- CONFIGURATION ---
@@ -77,7 +77,7 @@ const MOCK_DATA = [
   { id: '102', fields: { "标题": "🔥 今日紧急任务", "状态": STATUS.TODO, "类型": TYPE.TASK, "优先级": PRIORITY.HIGH, "内容方向": "提效工具", "来源": "PC", "截止日期": Date.now(), "标签": ["工作"], "记录日期": Date.now() - 100000 } },
   { id: '103', fields: { "标题": "正在进行的任务", "状态": STATUS.DOING, "类型": TYPE.TASK, "优先级": PRIORITY.NORMAL, "内容方向": "提效工具", "来源": "PC", "截止日期": Date.now(), "记录日期": Date.now() - 200000 } },
   { id: '104', fields: { "标题": "已完成的任务", "状态": STATUS.DONE, "类型": TYPE.TASK, "优先级": PRIORITY.NORMAL, "内容方向": "个人成长", "来源": "Mobile", "截止日期": Date.now(), "记录日期": Date.now() - 300000 } },
-  { id: '105', fields: { "标题": "关于效率工具的思考", "内容": "工具只是手段...", "状态": STATUS.DONE, "类型": TYPE.NOTE, "内容方向": "个人成长", "来源": "PC", "记录日期": Date.now() - 400000 } },
+  { id: '105', fields: { "标题": "关于效率工具的思考 #PKM", "内容": "工具只是手段...", "状态": STATUS.DONE, "类型": TYPE.NOTE, "标签": ["PKM"], "内容方向": "个人成长", "来源": "PC", "记录日期": Date.now() - 400000 } },
 ];
 
 /**
@@ -92,23 +92,32 @@ class DeepSeekService {
   getKey() { return localStorage.getItem(this.STORAGE_KEY); }
   saveKey(key) { localStorage.setItem(this.STORAGE_KEY, key); }
   
-  async optimize(content, type) {
+  // [UPDATED] Updated optimize function to accept both title and content
+  async optimize(titleInput, contentInput, type) {
     const apiKey = this.getKey();
     if (!apiKey) throw new Error("请先在设置中配置 DeepSeek API Key");
 
-    let systemPrompt = "你是一个高效的个人知识管理助手。用户会输入一段原始文本（可能包含URL链接）。";
-    systemPrompt += "\n\n请你完成两个任务：";
-    systemPrompt += "\n1. 'title': 提炼一个简短、概括性的标题（20字以内）。";
-    systemPrompt += "\n2. 'content': 优化、润色原始文本。**重要：如果有 URL 链接，必须保留原样，不要删除或修改链接**。";
+    const fullText = `标题/摘要输入: ${titleInput || "无"}\n详细内容输入: ${contentInput || "无"}`;
+
+    let systemPrompt = "你是一个高效的个人知识管理助手。用户会提供一段原始的输入（包含标题框和内容框的文字）。";
+    systemPrompt += "\n请你完成两个任务：\n1. 提炼或优化一个简短、概括性的标题（20字以内），放入 'title' 字段。\n2. 根据类型优化详细内容，放入 'content' 字段。";
     
-    if (type === TYPE.TASK) systemPrompt += "\n针对【任务】：如果是模糊的任务，请尝试拆解为子步骤放入 content。";
-    else if (type === TYPE.IDEA) systemPrompt += "\n针对【灵感】：请拓展思路，给出相关的应用场景放入 content。";
-    
+    // [UPDATED] Refined Prompts based on user feedback
+    if (type === TYPE.TASK) {
+        systemPrompt += "\n针对【任务】：确保任务描述清晰可执行。**不要偏离用户的原始意图**，不要随意扩展不相关的步骤。";
+    } else if (type === TYPE.IDEA || type === TYPE.NOTE) {
+        systemPrompt += "\n针对【灵感/笔记】：**以总结和条理化为主**。保留核心观点，去除冗余。**不要进行过度的发散或扩展**，以免偏离原意。";
+    } else if (type === TYPE.JOURNAL) {
+        systemPrompt += "\n针对【日记】：**以润色表述为主**。使文字更通顺优美，但**必须保留原文的核心内容和情感**，不要大幅改写或偏离原文。";
+    }
+
     systemPrompt += `
-\n请务必以纯 JSON 格式返回，不要包含 Markdown 代码块标记。返回对象结构必须为：
+\n重要约束：
+1. **必须保留原文中的所有 URL 链接**，原样输出，不可修改或删除。
+2. 请务必以纯 JSON 格式返回，不要包含 Markdown 代码块标记。返回对象结构必须为：
 {
-  "title": "简短标题",
-  "content": "包含链接的完整优化内容"
+  "title": "...",
+  "content": "..."
 }`;
 
     try {
@@ -122,7 +131,7 @@ class DeepSeekService {
           model: "deepseek-chat",
           messages: [
             { role: "system", content: systemPrompt },
-            { role: "user", content: content }
+            { role: "user", content: fullText } // Send combined text
           ],
           temperature: 0.7,
           stream: false
@@ -157,7 +166,7 @@ class FeishuService {
     
     this.REQUIRED_FIELDS = [
       "标题", "内容", "状态", "类型", "优先级", 
-      "内容方向", "来源", "下一步", 
+      "内容方向", "来源", "标签", "下一步", 
       "截止日期", "记录日期"
     ];
   }
@@ -182,6 +191,7 @@ class FeishuService {
       await new Promise(resolve => setTimeout(resolve, 300)); 
       if (endpoint.includes('tenant_access_token')) return { tenant_access_token: 'mock_token' };
       if (endpoint.includes('/records') && method === 'GET') return { items: MOCK_DATA };
+      // Mocking fields request for preview
       if (endpoint.includes('/fields')) return { items: [{ field_name: "内容方向", property: { options: CONTENT_DIRECTIONS.map(name => ({ name })) } }] };
       return { code: 0, msg: "success", data: {} };
     }
@@ -257,7 +267,7 @@ class FeishuService {
   async addRecord(data) {
     const { config, token } = await this.checkConfigOrThrow();
     
-    // [LOGIC CHANGE] If title is empty, use content as title for initial display
+    // [FIX] 标题自动截取：20字符
     let finalTitle = data.title;
     if (!finalTitle && data.content) {
        const firstLine = data.content.split('\n')[0];
@@ -266,9 +276,11 @@ class FeishuService {
         finalTitle = finalTitle.substring(0, 20) + "...";
     }
 
+    const autoTags = extractTags((finalTitle || "") + " " + (data.content || ""));
+
     const fields = {
       "标题": finalTitle || "无标题记录", 
-      "内容": data.content || "", // Content stays as content
+      "内容": data.content || "", 
       "来源": data.source || "PC", 
       "状态": data.status || STATUS.INBOX, 
       "类型": data.type || TYPE.IDEA,  
@@ -278,6 +290,8 @@ class FeishuService {
     };
     if (data.nextActions && data.nextActions.length > 0) fields["下一步"] = data.nextActions;
     if (data.dueDate) fields["截止日期"] = new Date(data.dueDate).getTime();
+    if (autoTags.length > 0) fields["标签"] = autoTags;
+    else if (data.tags && data.tags.length > 0) fields["标签"] = data.tags;
     
     const res = await this.request(`/bitable/v1/apps/${config.appToken}/tables/${config.tableId}/records`, 'POST', { fields }, token);
     return res.record;
@@ -292,6 +306,8 @@ class FeishuService {
     const { config, token } = await this.checkConfigOrThrow();
     return await this.request(`/bitable/v1/apps/${config.appToken}/tables/${config.tableId}/records/${recordId}`, 'DELETE', null, token);
   }
+
+  async createTable(appId, appSecret, appToken) { return "manual_mode"; }
 }
 
 const feishuService = new FeishuService();
@@ -333,6 +349,7 @@ const FeatureCard = ({ icon, color, title, desc }) => (
   </div>
 );
 
+// StepCard with Icons - Using safe icons
 const StepCard = ({ icon: Icon, title, desc }) => (
   <div className="bg-slate-900 p-6 rounded-2xl border border-slate-800 text-center relative z-10 group hover:border-slate-700 transition-colors">
     <div className="w-14 h-14 bg-slate-800 text-indigo-400 rounded-2xl flex items-center justify-center mx-auto mb-6 border-4 border-slate-950 shadow-xl shadow-indigo-900/10 group-hover:scale-110 transition-transform duration-300">
@@ -360,6 +377,7 @@ const FieldGuide = () => {
               <div className="p-1.5 bg-slate-900 rounded border border-slate-800">下一步 (多选: 学习/整理/分享...)</div>
               <div className="p-1.5 bg-slate-900 rounded border border-slate-800">内容方向 (单选)</div>
               <div className="p-1.5 bg-slate-900 rounded border border-slate-800">来源 (单选: Mobile/PC)</div>
+              <div className="p-1.5 bg-slate-900 rounded border border-slate-800">标签 (多选/文本)</div>
               <div className="p-1.5 bg-slate-900 rounded border border-slate-800">截止日期 (日期)</div>
               <div className="p-1.5 bg-slate-900 rounded border border-slate-800">记录日期 (日期)</div>
            </div>
@@ -420,6 +438,8 @@ const EditRecordModal = ({ isOpen, record, onClose, onSave, directions }) => {
     const fieldsToSave = { ...formData };
     if (fieldsToSave["截止日期"]) fieldsToSave["截止日期"] = new Date(fieldsToSave["截止日期"]).getTime();
     else fieldsToSave["截止日期"] = null;
+    if (fieldsToSave["标签"]) fieldsToSave["标签"] = fieldsToSave["标签"].split(/[,，]/).map(t => t.trim()).filter(Boolean);
+    else fieldsToSave["标签"] = null;
     onSave(record.id, fieldsToSave);
   };
   
@@ -451,6 +471,7 @@ const EditRecordModal = ({ isOpen, record, onClose, onSave, directions }) => {
            <div>
                <label className="text-xs font-bold text-slate-500 uppercase block mb-1">截止日期</label>
                <input type="date" className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-slate-300 outline-none" value={formData["截止日期"] || ""} onChange={e => setFormData({...formData, "截止日期": e.target.value})} />
+               {/* Quick Date Buttons */}
                <div className="flex gap-2 mt-2">
                    <button onClick={() => setQuickDate(0)} className="text-[10px] px-2 py-1 bg-slate-800 hover:bg-slate-700 rounded text-slate-400">今天</button>
                    <button onClick={() => setQuickDate(1)} className="text-[10px] px-2 py-1 bg-slate-800 hover:bg-slate-700 rounded text-slate-400">明天</button>
@@ -477,12 +498,13 @@ const QuickCaptureModal = ({ isOpen, onClose, onSave }) => {
   useEffect(() => { if (isOpen && inputRef.current) setTimeout(() => inputRef.current.focus(), 100); }, [isOpen]);
 
   const handleAiOptimize = async () => {
-    if (!text.trim()) return;
+    if (!text.trim() && !note.trim()) return; // [UPDATED] Check both input
     setIsAiLoading(true);
     try {
-      const result = await aiService.optimize(text, type);
-      setText(result.title); 
-      setNote(result.content);
+      // [UPDATED] Use combined input for optimize
+      const result = await aiService.optimize(text, note, type);
+      setText(result.title); // 更新标题
+      setNote(result.content); // 更新备注
     } catch (e) {
       console.error(e);
     } finally {
@@ -527,7 +549,7 @@ const QuickCaptureModal = ({ isOpen, onClose, onSave }) => {
             ))}
             <button 
                 onClick={handleAiOptimize}
-                disabled={isAiLoading || !text.trim()}
+                disabled={isAiLoading || (!text.trim() && !note.trim())}
                 className="p-2 rounded-lg text-indigo-400 hover:bg-indigo-500/10 transition-all ml-2"
                 title="AI 优化"
             >
@@ -578,9 +600,9 @@ const KanbanCard = ({ item, onMove, onClick }) => (
 const WelcomeScreen = ({ onStart }) => (
   <div className="min-h-screen bg-slate-950 text-slate-200 font-sans">
     <nav className="flex items-center justify-between px-6 py-6 max-w-7xl mx-auto border-b border-slate-800/50"><Logo /><button onClick={onStart} className="px-4 py-2 text-sm font-bold text-slate-300 bg-slate-800/50 border border-slate-700 rounded-lg hover:bg-slate-700 hover:text-white transition-all">开启体验 / 登录</button></nav>
-    <div className="max-w-4xl mx-auto px-6 pt-20 pb-20 text-center animate-fade-in-up"><div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/10 text-indigo-400 text-xs font-bold uppercase tracking-wider mb-6 border border-indigo-500/20">v3.6 AI & PWA</div><h1 className="text-5xl md:text-7xl font-extrabold text-white tracking-tight mb-8 leading-tight">掌控你的 <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400">数字人生</span></h1><p className="text-xl md:text-2xl text-slate-400 mb-10 max-w-2xl mx-auto leading-relaxed">AI 驱动的极速录入 · 深度管理任务 · 数据完全私有</p><button onClick={onStart} className="group relative inline-flex items-center justify-center px-8 py-4 font-bold text-white transition-all duration-200 bg-indigo-600 rounded-full hover:bg-indigo-500 hover:shadow-lg hover:shadow-indigo-500/25 hover:-translate-y-1">开启 LifeOS <ArrowRight className="ml-2 w-5 h-5 group-hover:translate-x-1 transition-transform" /></button></div>
+    <div className="max-w-4xl mx-auto px-6 pt-20 pb-20 text-center animate-fade-in-up"><div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/10 text-indigo-400 text-xs font-bold uppercase tracking-wider mb-6 border border-indigo-500/20">v3.6.1 AI & PWA</div><h1 className="text-5xl md:text-7xl font-extrabold text-white tracking-tight mb-8 leading-tight">掌控你的 <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400">数字人生</span></h1><p className="text-xl md:text-2xl text-slate-400 mb-10 max-w-2xl mx-auto leading-relaxed">AI 驱动的极速录入 · 深度管理任务 · 数据完全私有</p><button onClick={onStart} className="group relative inline-flex items-center justify-center px-8 py-4 font-bold text-white transition-all duration-200 bg-indigo-600 rounded-full hover:bg-indigo-500 hover:shadow-lg hover:shadow-indigo-500/25 hover:-translate-y-1">开启 LifeOS <ArrowRight className="ml-2 w-5 h-5 group-hover:translate-x-1 transition-transform" /></button></div>
     <div className="bg-slate-900/50 py-24 border-y border-slate-800/50"><div className="max-w-7xl mx-auto px-6"><div className="grid md:grid-cols-3 gap-8"><FeatureCard icon={<Smartphone size={24} />} color="text-blue-400 bg-blue-400/10" title="极速捕获" desc="专为手机设计的输入界面，随时随地记录灵感。" /><FeatureCard icon={<Shield size={24} />} color="text-emerald-400 bg-emerald-400/10" title="数据隐私" desc="BYOK 架构。数据直连飞书，密钥本地存储，不经过第三方服务器。" /><FeatureCard icon={<Activity size={24} />} color="text-purple-400 bg-purple-400/10" title="GTD 工作流" desc="内置收件箱、下一步行动、优先级管理，让一切井井有条。" /></div></div></div>
-    <div className="py-24"><div className="max-w-6xl mx-auto px-6"><div className="text-center mb-16"><h2 className="text-3xl font-bold text-white mb-4">只需三步，即刻开启</h2><p className="text-slate-500">连接飞书，无需复杂的服务器配置。</p></div><div className="grid md:grid-cols-3 gap-8 relative"><div className="hidden md:block absolute top-10 left-0 w-full h-0.5 bg-slate-800 -z-10"></div><StepCard icon={Table} title="复制标准模版" desc="点击右下角按钮，将标准表格模版复制到你的飞书。" /><StepCard icon={Key} title="获取 API 密钥" desc="复制浏览器地址栏的 Base ID 和 Table ID。" /><StepCard icon={Zap} title="开始使用" desc="填入配置，立即连接你的私人数据库。" /></div></div></div>
+    <div className="py-24"><div className="max-w-6xl mx-auto px-6"><div className="text-center mb-16"><h2 className="text-3xl font-bold text-white mb-4">只需三步，即刻开启</h2><p className="text-slate-500">连接飞书，无需复杂的服务器配置。</p></div><div className="grid md:grid-cols-3 gap-8 relative"><div className="hidden md:block absolute top-10 left-0 w-full h-0.5 bg-slate-800 -z-10"></div><StepCard icon={FileText} title="复制标准模版" desc="点击右下角按钮，将标准表格模版复制到你的飞书。" /><StepCard icon={Lock} title="获取 API 密钥" desc="复制浏览器地址栏的 Base ID 和 Table ID。" /><StepCard icon={Zap} title="开始使用" desc="填入配置，立即连接你的私人数据库。" /></div></div></div>
     <footer className="bg-slate-950 border-t border-slate-800 text-slate-500 py-12 text-center text-sm"><div className="max-w-2xl mx-auto px-4"><div className="flex flex-wrap justify-center gap-6 font-medium mb-8 text-slate-400"><div className="flex items-center gap-2"><User size={14} /><span>作者：小鲸</span></div><div className="flex items-center gap-2"><Mail size={14} /><span>1584897236@qq.com</span></div><div className="flex items-center gap-2"><MessageCircle size={14} /><span>微信：zhaoqi3210</span></div><a href="https://www.xiaojingfy.com" target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 hover:text-indigo-400 transition-colors"><Globe size={14} /><span>www.xiaojingfy.com</span></a></div><p className="opacity-50 text-xs">© 2025 LifeOS. Designed for productivity.</p></div></footer>
   </div>
 );
@@ -652,7 +674,7 @@ const SettingsScreen = ({ onSave, onCancel, initialConfig, notify, onLogout }) =
           
           {/* Install PWA Button */}
           <button type="button" onClick={handleInstallClick} className="w-full mt-2 flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold py-3 px-4 rounded-xl transition-colors border border-slate-700">
-             <Zap size={18} /> 安装 LifeOS 到桌面
+             <Download size={18} /> 安装 LifeOS 到桌面
           </button>
           
           <button type="button" onClick={onCancel} className="w-full text-slate-500 hover:text-slate-300 py-2 text-sm mt-2">取消</button>
@@ -729,20 +751,19 @@ const MobileView = ({ onSettings, notify, directions }) => {
   const handleSend = async () => {
     if (!inputValue.trim()) return;
     setIsSending(true);
-
-    const now = Date.now();
     
-    // [AUTO AI OPTIMIZE] Check if AI key is present to decide flow
+    const now = Date.now();
+    // 构造乐观数据，确保字段完整以便 filter 正确工作
     let finalTitle = inputValue;
     let finalContent = details.note;
-    
-    // If user has input, we can try to optimize it automatically before sending
-    // For now, to keep it snappy, we just send. But user asked for auto-gen title.
-    // So we will do a background update or pre-fetch?
-    // User requested: "When I publish content... automatically call API"
-    // So we will do it here.
 
-    // 1. Prepare Optimistic UI
+    // 1. AI Auto Optimize Logic (Simulated here, but real call happens)
+    // If user didn't click AI button manually, we do it in background if configured? 
+    // User requirement: "When I publish... automatically call API"
+    // So we try to optimize here if not already optimized.
+    // However, to keep UI snappy, we do Optimistic update first with raw data.
+    
+    // Optimistic UI Update
     const optimisticRecord = { 
         id: "temp_" + now, 
         fields: { 
@@ -754,31 +775,29 @@ const MobileView = ({ onSettings, notify, directions }) => {
             "截止日期": details.dueDate ? new Date(details.dueDate).getTime() : null,
             "优先级": PRIORITY.NORMAL,
             "来源": "Mobile",
-            "内容方向": "个人成长"
+            "内容方向": "个人成长" // Mobile default
         } 
     };
-    addLocalRecord(optimisticRecord); // Show immediately
-    
+    addLocalRecord(optimisticRecord);
+
     // Reset Inputs immediately
     setInputValue(""); 
     setDetails({ type: TYPE.IDEA, dueDate: "", note: "" }); 
     setShowDetails(false);
 
     try {
-        // 2. Perform AI Optimization (if needed)
-        // If content is empty but title is long, treat title as content and generate new title
-        if (!finalContent && finalTitle.length > 10) {
+        // 2. Call AI (If content is empty or user wants auto optimization)
+        // We use the combined input for optimization
+        if (finalTitle.length > 5 || finalContent.length > 5) {
             try {
-                // We use the raw input as 'content' for AI
-                const aiResult = await aiService.optimize(finalTitle, details.type);
-                finalTitle = aiResult.title;
-                finalContent = aiResult.content;
-            } catch (e) {
-                console.warn("AI Auto-optimize failed, using raw input", e);
+                 const aiResult = await aiService.optimize(finalTitle, finalContent, details.type);
+                 finalTitle = aiResult.title;
+                 finalContent = aiResult.content;
+            } catch(e) {
+                console.warn("Auto AI optimization failed, using raw input");
             }
         }
 
-        // 3. Send to Feishu
         await feishuService.addRecord({ 
           title: finalTitle, 
           content: finalContent, 
@@ -787,15 +806,12 @@ const MobileView = ({ onSettings, notify, directions }) => {
           dueDate: details.dueDate, 
           status: STATUS.INBOX,
           direction: "个人成长"
-        });
-        
-        notify("已记录", "success");
-        loadData(); // Sync real data (replace temp ID)
+      });
+      notify("已记录", "success");
+      loadData(); // Sync real data
     } catch (error) { 
         notify("发送失败", "error"); 
-    } finally { 
-        setIsSending(false); 
-    }
+    } finally { setIsSending(false); }
   };
 
   const handleEditSave = async (id, fields) => {
@@ -815,10 +831,10 @@ const MobileView = ({ onSettings, notify, directions }) => {
 
   // [NEW] Mobile AI Optimize (Manual Button)
   const handleAiOptimize = async () => {
-    if (!inputValue.trim()) { notify("请先输入内容", "info"); return; }
+    if (!inputValue.trim() && !details.note.trim()) { notify("请先输入内容", "info"); return; }
     setIsAiLoading(true);
     try {
-      const result = await aiService.optimize(inputValue, details.type);
+      const result = await aiService.optimize(inputValue, details.note, details.type);
       setInputValue(result.title);
       setDetails(prev => ({ ...prev, note: result.content }));
       notify("AI 优化完成", "success");
@@ -944,7 +960,7 @@ const MobileView = ({ onSettings, notify, directions }) => {
                 {/* Mobile AI Button */}
                 <button 
                    onClick={handleAiOptimize}
-                   disabled={isAiLoading || !inputValue.trim()}
+                   disabled={isAiLoading || (!inputValue.trim() && !details.note.trim())}
                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-indigo-400 disabled:opacity-30 transition-all"
                 >
                    {isAiLoading ? <Loader2 size={18} className="animate-spin" /> : <Sparkles size={18} />}
@@ -1068,10 +1084,17 @@ const DesktopView = ({ onLogout, onSettings, notify, isDemoMode, onGoHome, direc
 
         if (!finalContent && finalTitle.length > 10) {
             try {
-                const aiResult = await aiService.optimize(finalTitle, desktopDetails.type);
+                const aiResult = await aiService.optimize(finalTitle, "", desktopDetails.type); // Pass empty content
                 finalTitle = aiResult.title;
                 finalContent = aiResult.content;
             } catch(e) {}
+        } else if (finalTitle && finalContent) {
+             // Optimize both
+             try {
+                const aiResult = await aiService.optimize(finalTitle, finalContent, desktopDetails.type);
+                finalTitle = aiResult.title;
+                finalContent = aiResult.content;
+            } catch (e) {}
         }
 
         await feishuService.addRecord({ 
@@ -1094,11 +1117,11 @@ const DesktopView = ({ onLogout, onSettings, notify, isDemoMode, onGoHome, direc
   // AI Button Handler
   const handleAiOptimize = async (e) => {
     e.preventDefault(); // Prevent form submission
-    if (!quickInput.trim()) { notify("请先输入内容", "info"); return; }
+    if (!quickInput.trim() && !desktopDetails.note.trim()) { notify("请先输入内容", "info"); return; }
     
     setIsAiLoading(true);
     try {
-      const result = await aiService.optimize(quickInput, desktopDetails.type);
+      const result = await aiService.optimize(quickInput, desktopDetails.note, desktopDetails.type);
       setQuickInput(result.title); // [UPDATED] Auto fill title
       setDesktopDetails(prev => ({ ...prev, note: result.content })); // [UPDATED] Auto fill note
       notify("AI 优化完成！请查看备注", "success");
@@ -1337,7 +1360,7 @@ const DesktopView = ({ onLogout, onSettings, notify, isDemoMode, onGoHome, direc
                           <select className="bg-slate-800 border border-slate-700 text-xs text-slate-300 px-2 py-1.5 rounded-lg" value={desktopDetails.type} onChange={e => setDesktopDetails({...desktopDetails, type: e.target.value})}>
                              {[TYPE.IDEA, TYPE.TASK, TYPE.NOTE, TYPE.JOURNAL].map(t => <option key={t} value={t}>{t}</option>)}
                           </select>
-                          <select className="bg-slate-800 border border-slate-700 text-xs text-slate-300 px-2 py-1.5 rounded-lg" value={desktopDetails.direction} onChange={e => setDesktopDetails({...desktopDetails, direction: e.target.value})}>{directions.map(d => <option key={d} value={d}>{d}</option>)}</select>
+                          <select className="bg-slate-800 border border-slate-700 text-xs text-slate-300 px-2 py-1.5 rounded-lg" value={desktopDetails.direction} onChange={e => setDesktopDetails({...desktopDetails, direction: e.target.value})}>{CONTENT_DIRECTIONS.map(d => <option key={d} value={d}>{d}</option>)}</select>
                         </div>
                         <div className="flex flex-wrap gap-2">{actions.map(action => (<button key={action} type="button" onClick={() => toggleAction(action)} className={`px-2 py-1 rounded border text-[10px] flex items-center gap-1 transition-colors ${desktopDetails.nextActions.includes(action) ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-300' : 'bg-slate-900 border-slate-700 text-slate-500 hover:border-slate-600'}`}>{desktopDetails.nextActions.includes(action) && <Check size={8} />} {action}</button>))}</div>
                         <div className="flex justify-between items-center pt-2"><button type="submit" disabled={!quickInput.trim() || isQuickAdding} className="bg-indigo-600 text-white px-6 py-1.5 rounded-lg text-sm font-bold hover:bg-indigo-500 disabled:opacity-50 transition-colors">{isQuickAdding ? '保存中...' : '保存'}</button></div>
