@@ -10,7 +10,7 @@ import {
   HelpCircle, AlertTriangle, Lock, RefreshCw, Eye, ChevronDown, ChevronUp,
   User, Mail, MessageCircle, Globe, Loader2, Info, AlertCircle, Check, FileText, 
   Dices, Sliders, Book, PenTool, Hash, Layout, Search, Command, Flame, BookOpen,
-  Edit3, MoreVertical, XCircle, ExternalLink, Sparkles, Wand2, Timer, Rocket, Download
+  Edit3, MoreVertical, XCircle, ExternalLink, Sparkles, Wand2, Timer, Rocket
 } from 'lucide-react';
 
 // --- CONFIGURATION ---
@@ -254,7 +254,6 @@ class FeishuService {
   async addRecord(data) {
     const { config, token } = await this.checkConfigOrThrow();
     
-    // [FIX] 标题自动截取：20字符
     let finalTitle = data.title;
     if (!finalTitle && data.content) {
        const firstLine = data.content.split('\n')[0];
@@ -622,7 +621,13 @@ const SettingsScreen = ({ onSave, onCancel, initialConfig, notify, onLogout }) =
         setDeferredPrompt(null);
       });
     } else {
-        alert("当前环境暂不支持安装或已安装，请尝试在 Safari/Chrome 菜单中添加至主屏幕。");
+        // [UPDATED] More specific instructions
+        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+        if (isIOS) {
+            alert("iOS 用户请点击 Safari 底部中间的【分享】按钮，下滑选择【添加到主屏幕】即可安装。");
+        } else {
+            alert("请尝试点击浏览器右上角菜单（三个点），选择【安装应用】或【添加到主屏幕】。");
+        }
     }
   };
 
@@ -657,7 +662,7 @@ const SettingsScreen = ({ onSave, onCancel, initialConfig, notify, onLogout }) =
           
           {/* Install PWA Button */}
           <button type="button" onClick={handleInstallClick} className="w-full mt-2 flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold py-3 px-4 rounded-xl transition-colors border border-slate-700">
-             <Download size={18} /> 安装 LifeOS 到桌面
+             <Zap size={18} /> 安装 LifeOS 到桌面
           </button>
           
           <button type="button" onClick={onCancel} className="w-full text-slate-500 hover:text-slate-300 py-2 text-sm mt-2">取消</button>
