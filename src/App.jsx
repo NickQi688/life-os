@@ -74,10 +74,10 @@ const getLocalDateString = () => {
  */
 const MOCK_DATA = [
   { id: '101', fields: { "标题": "👋 欢迎使用 LifeOS！", "内容": "点击卡片编辑详情。", "状态": STATUS.INBOX, "类型": TYPE.IDEA, "优先级": PRIORITY.NORMAL, "内容方向": "个人成长", "来源": "PC", "记录日期": Date.now() } },
-  { id: '102', fields: { "标题": "🔥 今日紧急任务", "状态": STATUS.TODO, "类型": TYPE.TASK, "优先级": PRIORITY.HIGH, "内容方向": "提效工具", "来源": "PC", "截止日期": Date.now(), "标签": ["工作"], "记录日期": Date.now() - 100000 } },
+  { id: '102', fields: { "标题": "🔥 今日紧急任务", "状态": STATUS.TODO, "类型": TYPE.TASK, "优先级": PRIORITY.HIGH, "内容方向": "提效工具", "来源": "PC", "截止日期": Date.now(), "记录日期": Date.now() - 100000 } },
   { id: '103', fields: { "标题": "正在进行的任务", "状态": STATUS.DOING, "类型": TYPE.TASK, "优先级": PRIORITY.NORMAL, "内容方向": "提效工具", "来源": "PC", "截止日期": Date.now(), "记录日期": Date.now() - 200000 } },
   { id: '104', fields: { "标题": "已完成的任务", "状态": STATUS.DONE, "类型": TYPE.TASK, "优先级": PRIORITY.NORMAL, "内容方向": "个人成长", "来源": "Mobile", "截止日期": Date.now(), "记录日期": Date.now() - 300000 } },
-  { id: '105', fields: { "标题": "关于效率工具的思考 #PKM", "内容": "工具只是手段...", "状态": STATUS.DONE, "类型": TYPE.NOTE, "标签": ["PKM"], "内容方向": "个人成长", "来源": "PC", "记录日期": Date.now() - 400000 } },
+  { id: '105', fields: { "标题": "关于效率工具的思考 #PKM", "内容": "工具只是手段...", "状态": STATUS.DONE, "类型": TYPE.NOTE,  "内容方向": "个人成长", "来源": "PC", "记录日期": Date.now() - 400000 } },
 ];
 
 /**
@@ -166,7 +166,7 @@ class FeishuService {
     
     this.REQUIRED_FIELDS = [
       "标题", "内容", "状态", "类型", "优先级", 
-      "内容方向", "来源", "标签", "下一步", 
+      "内容方向", "来源", "下一步", 
       "截止日期", "记录日期"
     ];
   }
@@ -377,7 +377,6 @@ const FieldGuide = () => {
               <div className="p-1.5 bg-slate-900 rounded border border-slate-800">下一步 (多选: 学习/整理/分享...)</div>
               <div className="p-1.5 bg-slate-900 rounded border border-slate-800">内容方向 (单选)</div>
               <div className="p-1.5 bg-slate-900 rounded border border-slate-800">来源 (单选: Mobile/PC)</div>
-              <div className="p-1.5 bg-slate-900 rounded border border-slate-800">标签 (多选/文本)</div>
               <div className="p-1.5 bg-slate-900 rounded border border-slate-800">截止日期 (日期)</div>
               <div className="p-1.5 bg-slate-900 rounded border border-slate-800">记录日期 (日期)</div>
            </div>
