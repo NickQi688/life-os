@@ -77,7 +77,7 @@ const MOCK_DATA = [
   { id: '102', fields: { "标题": "🔥 今日紧急任务", "状态": STATUS.TODO, "类型": TYPE.TASK, "优先级": PRIORITY.HIGH, "内容方向": "提效工具", "来源": "PC", "截止日期": Date.now(), "标签": ["工作"], "记录日期": Date.now() - 100000 } },
   { id: '103', fields: { "标题": "正在进行的任务", "状态": STATUS.DOING, "类型": TYPE.TASK, "优先级": PRIORITY.NORMAL, "内容方向": "提效工具", "来源": "PC", "截止日期": Date.now(), "记录日期": Date.now() - 200000 } },
   { id: '104', fields: { "标题": "已完成的任务", "状态": STATUS.DONE, "类型": TYPE.TASK, "优先级": PRIORITY.NORMAL, "内容方向": "个人成长", "来源": "Mobile", "截止日期": Date.now(), "记录日期": Date.now() - 300000 } },
-  { id: '105', fields: { "标题": "关于效率工具的思考 #PKM", "内容": "工具只是手段...", "状态": STATUS.DONE, "类型": TYPE.NOTE, "标签": ["PKM"], "内容方向": "个人成长", "来源": "PC", "记录日期": Date.now() - 400000 } },
+  { id: '105', fields: { "标题": "关于效率工具的思考", "内容": "工具只是手段...", "状态": STATUS.DONE, "类型": TYPE.NOTE, "内容方向": "个人成长", "来源": "PC", "记录日期": Date.now() - 400000 } },
 ];
 
 /**
@@ -96,16 +96,20 @@ class DeepSeekService {
     const apiKey = this.getKey();
     if (!apiKey) throw new Error("请先在设置中配置 DeepSeek API Key");
 
-    let systemPrompt = "你是一个高效的个人知识管理助手。用户会输入一段原始文本。";
-    if (type === TYPE.TASK) systemPrompt += "用户输入了一个任务。请帮我完善它，使其具体可执行。如果内容模糊，请拆解为子步骤。";
-    else if (type === TYPE.IDEA) systemPrompt += "用户输入了一个灵感。请帮我拓展思路，给出 1-2 个相关的延伸思考或应用场景。";
-    else if (type === TYPE.JOURNAL) systemPrompt += "用户输入了一段日记。请帮我润色文字，使其更具表达力，并尝试提取某种情绪或洞察。";
-    else systemPrompt += "请帮我优化这段内容，使其更清晰简洁。";
-
+    let systemPrompt = "你是一个高效的个人知识管理助手。用户会输入一段原始文本（可能包含URL链接）。";
+    systemPrompt += "\n\n请你完成两个任务：";
+    systemPrompt += "\n1. 'title': 提炼一个简短、概括性的标题（20字以内）。";
+    systemPrompt += "\n2. 'content': 优化、润色原始文本。**重要：如果有 URL 链接，必须保留原样，不要删除或修改链接**。";
+    
+    if (type === TYPE.TASK) systemPrompt += "\n针对【任务】：如果是模糊的任务，请尝试拆解为子步骤放入 content。";
+    else if (type === TYPE.IDEA) systemPrompt += "\n针对【灵感】：请拓展思路，给出相关的应用场景放入 content。";
+    
     systemPrompt += `
-请务必以纯 JSON 格式返回，不要包含 Markdown 代码块标记（如 \`\`\`json）。返回对象需包含两个字段：
-1. 'title': 根据内容生成的简短标题(20字以内)
-2. 'content': 优化后的完整内容(保留原意基础上的优化)`;
+\n请务必以纯 JSON 格式返回，不要包含 Markdown 代码块标记。返回对象结构必须为：
+{
+  "title": "简短标题",
+  "content": "包含链接的完整优化内容"
+}`;
 
     try {
       const response = await fetch(`${this.API_BASE}/chat/completions`, {
@@ -153,7 +157,7 @@ class FeishuService {
     
     this.REQUIRED_FIELDS = [
       "标题", "内容", "状态", "类型", "优先级", 
-      "内容方向", "来源", "标签", "下一步", 
+      "内容方向", "来源", "下一步", 
       "截止日期", "记录日期"
     ];
   }
@@ -178,7 +182,6 @@ class FeishuService {
       await new Promise(resolve => setTimeout(resolve, 300)); 
       if (endpoint.includes('tenant_access_token')) return { tenant_access_token: 'mock_token' };
       if (endpoint.includes('/records') && method === 'GET') return { items: MOCK_DATA };
-      // [NEW] Mocking fields request for preview
       if (endpoint.includes('/fields')) return { items: [{ field_name: "内容方向", property: { options: CONTENT_DIRECTIONS.map(name => ({ name })) } }] };
       return { code: 0, msg: "success", data: {} };
     }
@@ -254,6 +257,7 @@ class FeishuService {
   async addRecord(data) {
     const { config, token } = await this.checkConfigOrThrow();
     
+    // [LOGIC CHANGE] If title is empty, use content as title for initial display
     let finalTitle = data.title;
     if (!finalTitle && data.content) {
        const firstLine = data.content.split('\n')[0];
@@ -262,11 +266,9 @@ class FeishuService {
         finalTitle = finalTitle.substring(0, 20) + "...";
     }
 
-    const autoTags = extractTags((finalTitle || "") + " " + (data.content || ""));
-
     const fields = {
       "标题": finalTitle || "无标题记录", 
-      "内容": data.content || "", 
+      "内容": data.content || "", // Content stays as content
       "来源": data.source || "PC", 
       "状态": data.status || STATUS.INBOX, 
       "类型": data.type || TYPE.IDEA,  
@@ -276,8 +278,6 @@ class FeishuService {
     };
     if (data.nextActions && data.nextActions.length > 0) fields["下一步"] = data.nextActions;
     if (data.dueDate) fields["截止日期"] = new Date(data.dueDate).getTime();
-    if (autoTags.length > 0) fields["标签"] = autoTags;
-    else if (data.tags && data.tags.length > 0) fields["标签"] = data.tags;
     
     const res = await this.request(`/bitable/v1/apps/${config.appToken}/tables/${config.tableId}/records`, 'POST', { fields }, token);
     return res.record;
@@ -292,8 +292,6 @@ class FeishuService {
     const { config, token } = await this.checkConfigOrThrow();
     return await this.request(`/bitable/v1/apps/${config.appToken}/tables/${config.tableId}/records/${recordId}`, 'DELETE', null, token);
   }
-
-  async createTable(appId, appSecret, appToken) { return "manual_mode"; }
 }
 
 const feishuService = new FeishuService();
@@ -335,7 +333,6 @@ const FeatureCard = ({ icon, color, title, desc }) => (
   </div>
 );
 
-// StepCard with Icons - Using safe icons
 const StepCard = ({ icon: Icon, title, desc }) => (
   <div className="bg-slate-900 p-6 rounded-2xl border border-slate-800 text-center relative z-10 group hover:border-slate-700 transition-colors">
     <div className="w-14 h-14 bg-slate-800 text-indigo-400 rounded-2xl flex items-center justify-center mx-auto mb-6 border-4 border-slate-950 shadow-xl shadow-indigo-900/10 group-hover:scale-110 transition-transform duration-300">
@@ -363,7 +360,6 @@ const FieldGuide = () => {
               <div className="p-1.5 bg-slate-900 rounded border border-slate-800">下一步 (多选: 学习/整理/分享...)</div>
               <div className="p-1.5 bg-slate-900 rounded border border-slate-800">内容方向 (单选)</div>
               <div className="p-1.5 bg-slate-900 rounded border border-slate-800">来源 (单选: Mobile/PC)</div>
-              <div className="p-1.5 bg-slate-900 rounded border border-slate-800">标签 (多选/文本)</div>
               <div className="p-1.5 bg-slate-900 rounded border border-slate-800">截止日期 (日期)</div>
               <div className="p-1.5 bg-slate-900 rounded border border-slate-800">记录日期 (日期)</div>
            </div>
@@ -404,8 +400,6 @@ const EditRecordModal = ({ isOpen, record, onClose, onSave, directions }) => {
 
   useEffect(() => {
     if (record) {
-      const tags = record.fields["标签"] || [];
-      const tagsStr = Array.isArray(tags) ? tags.join(", ") : (tags || "");
       let dateStr = "";
       if (record.fields["截止日期"]) { dateStr = new Date(record.fields["截止日期"]).toISOString().split('T')[0]; }
 
@@ -415,7 +409,6 @@ const EditRecordModal = ({ isOpen, record, onClose, onSave, directions }) => {
         "状态": record.fields["状态"] || STATUS.INBOX,
         "类型": record.fields["类型"] || TYPE.IDEA, 
         "优先级": record.fields["优先级"] || PRIORITY.NORMAL,
-        "标签": tagsStr,
         "内容方向": record.fields["内容方向"] || "个人成长",
         "下一步": record.fields["下一步"] || [],
         "截止日期": dateStr
@@ -427,8 +420,6 @@ const EditRecordModal = ({ isOpen, record, onClose, onSave, directions }) => {
     const fieldsToSave = { ...formData };
     if (fieldsToSave["截止日期"]) fieldsToSave["截止日期"] = new Date(fieldsToSave["截止日期"]).getTime();
     else fieldsToSave["截止日期"] = null;
-    if (fieldsToSave["标签"]) fieldsToSave["标签"] = fieldsToSave["标签"].split(/[,，]/).map(t => t.trim()).filter(Boolean);
-    else fieldsToSave["标签"] = null;
     onSave(record.id, fieldsToSave);
   };
   
@@ -450,7 +441,7 @@ const EditRecordModal = ({ isOpen, record, onClose, onSave, directions }) => {
     <Dialog isOpen={isOpen} title="编辑详情" onClose={onClose}>
       <div className="space-y-4">
         <div><label className="text-xs font-bold text-slate-500 uppercase block mb-1">标题</label><input className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-white focus:border-indigo-500 outline-none" value={formData["标题"] || ""} onChange={e => setFormData({...formData, "标题": e.target.value})} /></div>
-        <div><label className="text-xs font-bold text-slate-500 uppercase block mb-1">内容 / 备注</label><textarea className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-slate-300 focus:border-indigo-500 outline-none resize-none h-24" value={formData["内容"] || ""} onChange={e => setFormData({...formData, "内容": e.target.value})} /></div>
+        <div><label className="text-xs font-bold text-slate-500 uppercase block mb-1">详细内容</label><textarea className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-slate-300 focus:border-indigo-500 outline-none resize-none h-24" value={formData["内容"] || ""} onChange={e => setFormData({...formData, "内容": e.target.value})} /></div>
         <div className="grid grid-cols-2 gap-4">
            <div><label className="text-xs font-bold text-slate-500 uppercase block mb-1">状态</label><select className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-slate-300 outline-none" value={formData["状态"] || STATUS.INBOX} onChange={e => setFormData({...formData, "状态": e.target.value})}>{[STATUS.INBOX, STATUS.TODO, STATUS.DOING, STATUS.DONE].map(o => <option key={o} value={o}>{o}</option>)}</select></div>
            <div><label className="text-xs font-bold text-slate-500 uppercase block mb-1">优先级</label><select className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-slate-300 outline-none" value={formData["优先级"] || PRIORITY.NORMAL} onChange={e => setFormData({...formData, "优先级": e.target.value})}>{[PRIORITY.HIGH, PRIORITY.NORMAL, PRIORITY.LOW].map(o => <option key={o} value={o}>{o}</option>)}</select></div>
@@ -460,7 +451,6 @@ const EditRecordModal = ({ isOpen, record, onClose, onSave, directions }) => {
            <div>
                <label className="text-xs font-bold text-slate-500 uppercase block mb-1">截止日期</label>
                <input type="date" className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-slate-300 outline-none" value={formData["截止日期"] || ""} onChange={e => setFormData({...formData, "截止日期": e.target.value})} />
-               {/* Quick Date Buttons */}
                <div className="flex gap-2 mt-2">
                    <button onClick={() => setQuickDate(0)} className="text-[10px] px-2 py-1 bg-slate-800 hover:bg-slate-700 rounded text-slate-400">今天</button>
                    <button onClick={() => setQuickDate(1)} className="text-[10px] px-2 py-1 bg-slate-800 hover:bg-slate-700 rounded text-slate-400">明天</button>
@@ -491,8 +481,8 @@ const QuickCaptureModal = ({ isOpen, onClose, onSave }) => {
     setIsAiLoading(true);
     try {
       const result = await aiService.optimize(text, type);
-      setText(result.title); // 更新标题
-      setNote(result.content); // 更新备注
+      setText(result.title); 
+      setNote(result.content);
     } catch (e) {
       console.error(e);
     } finally {
@@ -503,7 +493,8 @@ const QuickCaptureModal = ({ isOpen, onClose, onSave }) => {
   const handleSubmit = async () => {
     if (!text.trim()) return;
     setIsSending(true);
-    await onSave({ title: text, content: note, type, status: type === TYPE.TASK ? STATUS.INBOX : STATUS.DONE, source: "QuickCapture" });
+    // [FIXED] Quick Capture now defaults to INBOX for ALL types
+    await onSave({ title: text, content: note, type, status: STATUS.INBOX, source: "QuickCapture" });
     setIsSending(false); setText(""); setNote(""); onClose();
   };
 
@@ -525,7 +516,7 @@ const QuickCaptureModal = ({ isOpen, onClose, onSave }) => {
           <textarea 
              value={note}
              onChange={e => setNote(e.target.value)}
-             placeholder="添加备注..."
+             placeholder="详细内容..."
              className="w-full bg-slate-800/50 rounded-lg p-2 text-sm text-slate-300 placeholder-slate-600 outline-none resize-none h-20"
           />
         </div>
@@ -587,7 +578,7 @@ const KanbanCard = ({ item, onMove, onClick }) => (
 const WelcomeScreen = ({ onStart }) => (
   <div className="min-h-screen bg-slate-950 text-slate-200 font-sans">
     <nav className="flex items-center justify-between px-6 py-6 max-w-7xl mx-auto border-b border-slate-800/50"><Logo /><button onClick={onStart} className="px-4 py-2 text-sm font-bold text-slate-300 bg-slate-800/50 border border-slate-700 rounded-lg hover:bg-slate-700 hover:text-white transition-all">开启体验 / 登录</button></nav>
-    <div className="max-w-4xl mx-auto px-6 pt-20 pb-20 text-center animate-fade-in-up"><div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/10 text-indigo-400 text-xs font-bold uppercase tracking-wider mb-6 border border-indigo-500/20">v3.5 PWA Ready</div><h1 className="text-5xl md:text-7xl font-extrabold text-white tracking-tight mb-8 leading-tight">掌控你的 <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400">数字人生</span></h1><p className="text-xl md:text-2xl text-slate-400 mb-10 max-w-2xl mx-auto leading-relaxed">AI 驱动的极速录入 · 深度管理任务 · 数据完全私有</p><button onClick={onStart} className="group relative inline-flex items-center justify-center px-8 py-4 font-bold text-white transition-all duration-200 bg-indigo-600 rounded-full hover:bg-indigo-500 hover:shadow-lg hover:shadow-indigo-500/25 hover:-translate-y-1">开启 LifeOS <ArrowRight className="ml-2 w-5 h-5 group-hover:translate-x-1 transition-transform" /></button></div>
+    <div className="max-w-4xl mx-auto px-6 pt-20 pb-20 text-center animate-fade-in-up"><div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/10 text-indigo-400 text-xs font-bold uppercase tracking-wider mb-6 border border-indigo-500/20">v3.6 AI & PWA</div><h1 className="text-5xl md:text-7xl font-extrabold text-white tracking-tight mb-8 leading-tight">掌控你的 <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400">数字人生</span></h1><p className="text-xl md:text-2xl text-slate-400 mb-10 max-w-2xl mx-auto leading-relaxed">AI 驱动的极速录入 · 深度管理任务 · 数据完全私有</p><button onClick={onStart} className="group relative inline-flex items-center justify-center px-8 py-4 font-bold text-white transition-all duration-200 bg-indigo-600 rounded-full hover:bg-indigo-500 hover:shadow-lg hover:shadow-indigo-500/25 hover:-translate-y-1">开启 LifeOS <ArrowRight className="ml-2 w-5 h-5 group-hover:translate-x-1 transition-transform" /></button></div>
     <div className="bg-slate-900/50 py-24 border-y border-slate-800/50"><div className="max-w-7xl mx-auto px-6"><div className="grid md:grid-cols-3 gap-8"><FeatureCard icon={<Smartphone size={24} />} color="text-blue-400 bg-blue-400/10" title="极速捕获" desc="专为手机设计的输入界面，随时随地记录灵感。" /><FeatureCard icon={<Shield size={24} />} color="text-emerald-400 bg-emerald-400/10" title="数据隐私" desc="BYOK 架构。数据直连飞书，密钥本地存储，不经过第三方服务器。" /><FeatureCard icon={<Activity size={24} />} color="text-purple-400 bg-purple-400/10" title="GTD 工作流" desc="内置收件箱、下一步行动、优先级管理，让一切井井有条。" /></div></div></div>
     <div className="py-24"><div className="max-w-6xl mx-auto px-6"><div className="text-center mb-16"><h2 className="text-3xl font-bold text-white mb-4">只需三步，即刻开启</h2><p className="text-slate-500">连接飞书，无需复杂的服务器配置。</p></div><div className="grid md:grid-cols-3 gap-8 relative"><div className="hidden md:block absolute top-10 left-0 w-full h-0.5 bg-slate-800 -z-10"></div><StepCard icon={Table} title="复制标准模版" desc="点击右下角按钮，将标准表格模版复制到你的飞书。" /><StepCard icon={Key} title="获取 API 密钥" desc="复制浏览器地址栏的 Base ID 和 Table ID。" /><StepCard icon={Zap} title="开始使用" desc="填入配置，立即连接你的私人数据库。" /></div></div></div>
     <footer className="bg-slate-950 border-t border-slate-800 text-slate-500 py-12 text-center text-sm"><div className="max-w-2xl mx-auto px-4"><div className="flex flex-wrap justify-center gap-6 font-medium mb-8 text-slate-400"><div className="flex items-center gap-2"><User size={14} /><span>作者：小鲸</span></div><div className="flex items-center gap-2"><Mail size={14} /><span>1584897236@qq.com</span></div><div className="flex items-center gap-2"><MessageCircle size={14} /><span>微信：zhaoqi3210</span></div><a href="https://www.xiaojingfy.com" target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 hover:text-indigo-400 transition-colors"><Globe size={14} /><span>www.xiaojingfy.com</span></a></div><p className="opacity-50 text-xs">© 2025 LifeOS. Designed for productivity.</p></div></footer>
@@ -621,7 +612,6 @@ const SettingsScreen = ({ onSave, onCancel, initialConfig, notify, onLogout }) =
         setDeferredPrompt(null);
       });
     } else {
-        // [UPDATED] More specific instructions
         const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
         if (isIOS) {
             alert("iOS 用户请点击 Safari 底部中间的【分享】按钮，下滑选择【添加到主屏幕】即可安装。");
@@ -739,45 +729,73 @@ const MobileView = ({ onSettings, notify, directions }) => {
   const handleSend = async () => {
     if (!inputValue.trim()) return;
     setIsSending(true);
-    
-    const now = Date.now();
-    // 构造乐观数据，确保字段完整以便 filter 正确工作
-    const newFields = { 
-        "标题": inputValue, 
-        "内容": details.note,
-        "状态": STATUS.INBOX, 
-        "类型": details.type, 
-        "记录日期": now,
-        "截止日期": details.dueDate ? new Date(details.dueDate).getTime() : null,
-        "优先级": PRIORITY.NORMAL,
-        "来源": "Mobile",
-        "内容方向": "个人成长" // Mobile default
-    };
-    const newRec = { id: "temp_" + now, fields: newFields };
-    
-    // 立即更新 UI
-    addLocalRecord(newRec);
 
-    // 重置输入框
+    const now = Date.now();
+    
+    // [AUTO AI OPTIMIZE] Check if AI key is present to decide flow
+    let finalTitle = inputValue;
+    let finalContent = details.note;
+    
+    // If user has input, we can try to optimize it automatically before sending
+    // For now, to keep it snappy, we just send. But user asked for auto-gen title.
+    // So we will do a background update or pre-fetch?
+    // User requested: "When I publish content... automatically call API"
+    // So we will do it here.
+
+    // 1. Prepare Optimistic UI
+    const optimisticRecord = { 
+        id: "temp_" + now, 
+        fields: { 
+            "标题": inputValue, 
+            "内容": details.note,
+            "状态": STATUS.INBOX, 
+            "类型": details.type, 
+            "记录日期": now,
+            "截止日期": details.dueDate ? new Date(details.dueDate).getTime() : null,
+            "优先级": PRIORITY.NORMAL,
+            "来源": "Mobile",
+            "内容方向": "个人成长"
+        } 
+    };
+    addLocalRecord(optimisticRecord); // Show immediately
+    
+    // Reset Inputs immediately
     setInputValue(""); 
     setDetails({ type: TYPE.IDEA, dueDate: "", note: "" }); 
     setShowDetails(false);
 
     try {
-      await feishuService.addRecord({ 
-          title: inputValue, 
-          content: details.note, 
+        // 2. Perform AI Optimization (if needed)
+        // If content is empty but title is long, treat title as content and generate new title
+        if (!finalContent && finalTitle.length > 10) {
+            try {
+                // We use the raw input as 'content' for AI
+                const aiResult = await aiService.optimize(finalTitle, details.type);
+                finalTitle = aiResult.title;
+                finalContent = aiResult.content;
+            } catch (e) {
+                console.warn("AI Auto-optimize failed, using raw input", e);
+            }
+        }
+
+        // 3. Send to Feishu
+        await feishuService.addRecord({ 
+          title: finalTitle, 
+          content: finalContent, 
           source: "Mobile", 
           type: details.type, 
           dueDate: details.dueDate, 
           status: STATUS.INBOX,
           direction: "个人成长"
-      });
-      notify("已记录", "success");
-      loadData(); // 后台静默同步真实 ID
+        });
+        
+        notify("已记录", "success");
+        loadData(); // Sync real data (replace temp ID)
     } catch (error) { 
         notify("发送失败", "error"); 
-    } finally { setIsSending(false); }
+    } finally { 
+        setIsSending(false); 
+    }
   };
 
   const handleEditSave = async (id, fields) => {
@@ -795,7 +813,7 @@ const MobileView = ({ onSettings, notify, directions }) => {
     loadData();
   };
 
-  // [NEW] Mobile AI Optimize
+  // [NEW] Mobile AI Optimize (Manual Button)
   const handleAiOptimize = async () => {
     if (!inputValue.trim()) { notify("请先输入内容", "info"); return; }
     setIsAiLoading(true);
@@ -916,13 +934,13 @@ const MobileView = ({ onSettings, notify, directions }) => {
                       <input type="date" className="bg-transparent text-sm text-slate-600 focus:outline-none w-full" onChange={e => setDetails({...details, dueDate: e.target.value})} />
                   </div>
               )}
-              <textarea className="w-full bg-slate-50 rounded-xl p-3 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none h-20 text-slate-800" placeholder="添加备注..." value={details.note} onChange={e => setDetails({...details, note: e.target.value})} />
+              <textarea className="w-full bg-slate-50 rounded-xl p-3 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none h-20 text-slate-800" placeholder="详细内容..." value={details.note} onChange={e => setDetails({...details, note: e.target.value})} />
             </div>
           )}
           <div className="relative flex items-end gap-2">
             <button onClick={() => setShowDetails(!showDetails)} className={`mb-1 p-2 rounded-xl transition-colors ${showDetails ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-800 text-slate-400 hover:text-white'}`}><MoreHorizontal size={24} /></button>
             <div className="flex-1 relative">
-                <textarea value={inputValue} onChange={(e) => setInputValue(e.target.value)} placeholder="记录想法..." className="w-full bg-slate-800/50 border border-slate-700 rounded-2xl p-4 pr-10 text-base text-white focus:outline-none focus:bg-slate-800 focus:border-indigo-500/50 transition-all resize-none h-14 max-h-32 placeholder-slate-500" rows={1} style={{ minHeight: '3.5rem' }} />
+                <textarea value={inputValue} onChange={(e) => setInputValue(e.target.value)} placeholder="记录想法/标题..." className="w-full bg-slate-800/50 border border-slate-700 rounded-2xl p-4 pr-10 text-base text-white focus:outline-none focus:bg-slate-800 focus:border-indigo-500/50 transition-all resize-none h-14 max-h-32 placeholder-slate-500" rows={1} style={{ minHeight: '3.5rem' }} />
                 {/* Mobile AI Button */}
                 <button 
                    onClick={handleAiOptimize}
@@ -1038,9 +1056,37 @@ const DesktopView = ({ onLogout, onSettings, notify, isDemoMode, onGoHome, direc
     if (!quickInput.trim()) return;
     setIsQuickAdding(true);
     await handleAction(async () => {
-        await feishuService.addRecord({ title: quickInput, content: desktopDetails.note, source: "PC", type: desktopDetails.type, priority: desktopDetails.priority, direction: desktopDetails.direction, infoSource: desktopDetails.infoSource, nextActions: desktopDetails.nextActions, dueDate: desktopDetails.type === '任务' ? desktopDetails.dueDate : null, status: STATUS.INBOX, tags: [] });
-        setQuickInput(""); setDesktopDetails({ type: TYPE.IDEA, priority: "普通", direction: "个人成长", infoSource: "其他", nextActions: [], dueDate: "", note: "" }); setInputExpanded(false);
+        // [AUTO AI] Logic
+        let finalTitle = quickInput;
+        let finalContent = desktopDetails.note;
+        
+        // Optimistic
+        setQuickInput(""); 
+        setDesktopDetails({ type: TYPE.IDEA, priority: "普通", direction: "个人成长", infoSource: "其他", nextActions: [], dueDate: "", note: "" }); 
+        setInputExpanded(false);
         notify("已记录", "success");
+
+        if (!finalContent && finalTitle.length > 10) {
+            try {
+                const aiResult = await aiService.optimize(finalTitle, desktopDetails.type);
+                finalTitle = aiResult.title;
+                finalContent = aiResult.content;
+            } catch(e) {}
+        }
+
+        await feishuService.addRecord({ 
+            title: finalTitle, 
+            content: finalContent, 
+            source: "PC", 
+            type: desktopDetails.type, 
+            priority: desktopDetails.priority, 
+            direction: desktopDetails.direction, 
+            infoSource: desktopDetails.infoSource, 
+            nextActions: desktopDetails.nextActions, 
+            dueDate: desktopDetails.type === '任务' ? desktopDetails.dueDate : null, 
+            status: STATUS.INBOX, 
+            tags: [] 
+        });
     });
     setIsQuickAdding(false);
   };
@@ -1291,7 +1337,7 @@ const DesktopView = ({ onLogout, onSettings, notify, isDemoMode, onGoHome, direc
                           <select className="bg-slate-800 border border-slate-700 text-xs text-slate-300 px-2 py-1.5 rounded-lg" value={desktopDetails.type} onChange={e => setDesktopDetails({...desktopDetails, type: e.target.value})}>
                              {[TYPE.IDEA, TYPE.TASK, TYPE.NOTE, TYPE.JOURNAL].map(t => <option key={t} value={t}>{t}</option>)}
                           </select>
-                          <select className="bg-slate-800 border border-slate-700 text-xs text-slate-300 px-2 py-1.5 rounded-lg" value={desktopDetails.direction} onChange={e => setDesktopDetails({...desktopDetails, direction: e.target.value})}>{CONTENT_DIRECTIONS.map(d => <option key={d} value={d}>{d}</option>)}</select>
+                          <select className="bg-slate-800 border border-slate-700 text-xs text-slate-300 px-2 py-1.5 rounded-lg" value={desktopDetails.direction} onChange={e => setDesktopDetails({...desktopDetails, direction: e.target.value})}>{directions.map(d => <option key={d} value={d}>{d}</option>)}</select>
                         </div>
                         <div className="flex flex-wrap gap-2">{actions.map(action => (<button key={action} type="button" onClick={() => toggleAction(action)} className={`px-2 py-1 rounded border text-[10px] flex items-center gap-1 transition-colors ${desktopDetails.nextActions.includes(action) ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-300' : 'bg-slate-900 border-slate-700 text-slate-500 hover:border-slate-600'}`}>{desktopDetails.nextActions.includes(action) && <Check size={8} />} {action}</button>))}</div>
                         <div className="flex justify-between items-center pt-2"><button type="submit" disabled={!quickInput.trim() || isQuickAdding} className="bg-indigo-600 text-white px-6 py-1.5 rounded-lg text-sm font-bold hover:bg-indigo-500 disabled:opacity-50 transition-colors">{isQuickAdding ? '保存中...' : '保存'}</button></div>
