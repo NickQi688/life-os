@@ -335,7 +335,7 @@ const FeatureCard = ({ icon, color, title, desc }) => (
   </div>
 );
 
-// [UPDATED] StepCard with Icons
+// [UPDATED] StepCard with Icons - Using safe icons
 const StepCard = ({ icon: Icon, title, desc }) => (
   <div className="bg-slate-900 p-6 rounded-2xl border border-slate-800 text-center relative z-10 group hover:border-slate-700 transition-colors">
     <div className="w-14 h-14 bg-slate-800 text-indigo-400 rounded-2xl flex items-center justify-center mx-auto mb-6 border-4 border-slate-950 shadow-xl shadow-indigo-900/10 group-hover:scale-110 transition-transform duration-300">
@@ -790,7 +790,7 @@ const MobileView = ({ onSettings, notify, directions }) => {
   };
 
   return (
-    <div className="flex flex-col h-screen bg-slate-950 text-slate-200">
+    <div className="flex flex-col h-screen bg-slate-950 text-slate-200 font-sans overflow-hidden">
       <div className="px-6 pt-12 pb-4 flex justify-between items-center bg-slate-900/50 backdrop-blur-md sticky top-0 z-10 border-b border-white/5"><Logo className="w-6 h-6" textSize="text-lg" /><button onClick={onSettings} className="p-2 text-slate-400 hover:text-white"><Settings size={20} /></button></div>
       {editingItem && <EditRecordModal isOpen={true} record={editingItem} onClose={() => setEditingItem(null)} onSave={handleEditSave} directions={directions} />}
       
@@ -1055,7 +1055,7 @@ const DesktopView = ({ onLogout, onSettings, notify, isDemoMode, onGoHome, direc
   const handleOpenBase = () => {
       const config = feishuService.getConfig();
       if (config && config.appToken && config.tableId) {
-          window.open(`https://base.feishu.cn/base/${config.appToken}?table=${config.tableId}`, '_blank');
+          window.open(`https://ai.feishu.cn/base/${config.appToken}?table=${config.tableId}`, '_blank');
       } else {
           notify("配置信息不完整，无法打开数据表", "error");
       }
