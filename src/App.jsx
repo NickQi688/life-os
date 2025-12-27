@@ -252,7 +252,7 @@ class FeishuService {
       "状态": data.status || STATUS.INBOX, 
       "类型": data.type || TYPE.IDEA,  
       "优先级": data.priority || PRIORITY.NORMAL,
-      "内容方向": data.direction || "个人成长", // [UPDATED] Default changed to 个人成长
+      "内容方向": data.direction || "个人成长", 
       "记录日期": Date.now() 
     };
     if (data.nextActions && data.nextActions.length > 0) fields["下一步"] = data.nextActions;
@@ -865,7 +865,7 @@ const DesktopView = ({ onLogout, onSettings, notify, isDemoMode, onGoHome, direc
   const [isQuickAdding, setIsQuickAdding] = useState(false);
   const [inputExpanded, setInputExpanded] = useState(false);
   // [UPDATED] Desktop Inbox Input: Added TYPE field to state
-  const [desktopDetails, setDesktopDetails] = useState({ type: TYPE.IDEA, priority: "普通", direction: "灵感", infoSource: "其他", nextActions: [], dueDate: "", note: "" });
+  const [desktopDetails, setDesktopDetails] = useState({ type: TYPE.IDEA, priority: "普通", direction: "个人成长", infoSource: "其他", nextActions: [], dueDate: "", note: "" });
   const inputRef = useRef(null);
   
   // [FIX] Add missing state for Focus Mode
@@ -947,7 +947,7 @@ const DesktopView = ({ onLogout, onSettings, notify, isDemoMode, onGoHome, direc
     setIsQuickAdding(true);
     await handleAction(async () => {
         await feishuService.addRecord({ title: quickInput, content: desktopDetails.note, source: "PC", type: desktopDetails.type, priority: desktopDetails.priority, direction: desktopDetails.direction, infoSource: desktopDetails.infoSource, nextActions: desktopDetails.nextActions, dueDate: desktopDetails.type === '任务' ? desktopDetails.dueDate : null, status: STATUS.INBOX, tags: [] });
-        setQuickInput(""); setDesktopDetails({ type: TYPE.IDEA, priority: "普通", direction: "灵感", infoSource: "其他", nextActions: [], dueDate: "", note: "" }); setInputExpanded(false);
+        setQuickInput(""); setDesktopDetails({ type: TYPE.IDEA, priority: "普通", direction: "个人成长", infoSource: "其他", nextActions: [], dueDate: "", note: "" }); setInputExpanded(false);
         notify("已记录", "success");
     });
     setIsQuickAdding(false);
