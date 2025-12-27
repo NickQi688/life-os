@@ -687,7 +687,8 @@ const MobileView = ({ onSettings, notify, directions }) => {
         "记录日期": now,
         "截止日期": details.dueDate ? new Date(details.dueDate).getTime() : null,
         "优先级": PRIORITY.NORMAL,
-        "来源": "Mobile"
+        "来源": "Mobile",
+        "内容方向": "个人成长" // Mobile default
     };
     const newRec = { id: "temp_" + now, fields: newFields };
     
@@ -706,7 +707,8 @@ const MobileView = ({ onSettings, notify, directions }) => {
           source: "Mobile", 
           type: details.type, 
           dueDate: details.dueDate, 
-          status: STATUS.INBOX 
+          status: STATUS.INBOX,
+          direction: "个人成长"
       });
       notify("已记录", "success");
       loadData(); // 后台静默同步真实 ID
@@ -762,7 +764,8 @@ const MobileView = ({ onSettings, notify, directions }) => {
         "优先级": PRIORITY.NORMAL, 
         "截止日期": new Date(localDate).getTime(), 
         "记录日期": now,
-        "来源": "Mobile"
+        "来源": "Mobile",
+        "内容方向": "个人成长"
     };
     const newRec = { id: "t_" + now, fields: newFields };
     
@@ -770,7 +773,7 @@ const MobileView = ({ onSettings, notify, directions }) => {
     setTodayInput("");
     
     await feishuService.addRecord({
-        title: todayInput, status: STATUS.DOING, type: TYPE.TASK, priority: PRIORITY.NORMAL, dueDate: localDate, source: "Mobile", tags: []
+        title: todayInput, status: STATUS.DOING, type: TYPE.TASK, priority: PRIORITY.NORMAL, dueDate: localDate, source: "Mobile", tags: [], direction: "个人成长"
     });
     notify("任务已添加", "success");
     loadData(); // 确保 ID 同步
@@ -833,7 +836,7 @@ const MobileView = ({ onSettings, notify, directions }) => {
         </div>
       </div>
       
-      {/* Mobile Bottom Bar (Refactored: Removed Categories, Only Types & Date) */}
+      {/* Mobile Bottom Bar */}
       <div className={`fixed bottom-0 left-0 w-full bg-slate-900/90 backdrop-blur-xl border-t border-white/10 pb-safe-area shadow-[0_-10px_40px_rgba(0,0,0,0.5)] transition-all duration-300 ${showDetails ? 'rounded-t-3xl' : ''} z-20`}>
         <div className="p-4">
           {showDetails && (
@@ -844,7 +847,7 @@ const MobileView = ({ onSettings, notify, directions }) => {
                  ))}
               </div>
               {details.type === TYPE.TASK && (<input type="date" className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-600 focus:outline-none focus:border-indigo-500 mb-2" onChange={e => setDetails({...details, dueDate: e.target.value})} />)}
-              <textarea className="w-full bg-slate-50 rounded-xl p-3 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none h-20 text-slate-800" placeholder="添加备注..." onChange={e => setDetails({...details, note: e.target.value})} value={details.note} />
+              <textarea className="w-full bg-slate-50 rounded-xl p-3 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none h-20 text-slate-800" placeholder="添加备注..." value={details.note} onChange={e => setDetails({...details, note: e.target.value})} />
             </div>
           )}
           <div className="relative flex items-end gap-2">
