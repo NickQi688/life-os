@@ -209,6 +209,25 @@ class FeishuService {
     return data ? data.tenant_access_token : null;
   }
 
+  // [NEW] Fetch field options from Feishu
+  async fetchFieldOptions(fieldName) {
+    try {
+      const { config, token } = await this.checkConfigOrThrow();
+      const data = await this.request(`/bitable/v1/apps/${config.appToken}/tables/${config.tableId}/fields?page_size=100`, 'GET', null, token);
+      
+      if (!data || !data.items) return [];
+      
+      const field = data.items.find(f => f.field_name === fieldName);
+      if (field && field.property && field.property.options) {
+        return field.property.options.map(opt => opt.name);
+      }
+      return [];
+    } catch (e) {
+      console.warn(`Failed to fetch options for ${fieldName}`, e);
+      return [];
+    }
+  }
+
   async fetchRecords() {
     const config = this.getConfig();
     if (!config) return MOCK_DATA;
@@ -316,6 +335,7 @@ const FeatureCard = ({ icon, color, title, desc }) => (
   </div>
 );
 
+// [UPDATED] StepCard with Icons
 const StepCard = ({ icon: Icon, title, desc }) => (
   <div className="bg-slate-900 p-6 rounded-2xl border border-slate-800 text-center relative z-10 group hover:border-slate-700 transition-colors">
     <div className="w-14 h-14 bg-slate-800 text-indigo-400 rounded-2xl flex items-center justify-center mx-auto mb-6 border-4 border-slate-950 shadow-xl shadow-indigo-900/10 group-hover:scale-110 transition-transform duration-300">
@@ -813,7 +833,7 @@ const MobileView = ({ onSettings, notify, directions }) => {
         </div>
       </div>
       
-      {/* Mobile Bottom Bar */}
+      {/* Mobile Bottom Bar (Refactored: Removed Categories, Only Types & Date) */}
       <div className={`fixed bottom-0 left-0 w-full bg-slate-900/90 backdrop-blur-xl border-t border-white/10 pb-safe-area shadow-[0_-10px_40px_rgba(0,0,0,0.5)] transition-all duration-300 ${showDetails ? 'rounded-t-3xl' : ''} z-20`}>
         <div className="p-4">
           {showDetails && (
@@ -824,7 +844,7 @@ const MobileView = ({ onSettings, notify, directions }) => {
                  ))}
               </div>
               {details.type === TYPE.TASK && (<input type="date" className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-600 focus:outline-none focus:border-indigo-500 mb-2" onChange={e => setDetails({...details, dueDate: e.target.value})} />)}
-              <textarea className="w-full bg-slate-50 rounded-xl p-3 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none h-20 text-slate-800" placeholder="添加备注..." value={details.note} onChange={e => setDetails({...details, note: e.target.value})} />
+              <textarea className="w-full bg-slate-50 rounded-xl p-3 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none h-20 text-slate-800" placeholder="添加备注..." onChange={e => setDetails({...details, note: e.target.value})} value={details.note} />
             </div>
           )}
           <div className="relative flex items-end gap-2">
@@ -1027,6 +1047,16 @@ const DesktopView = ({ onLogout, onSettings, notify, isDemoMode, onGoHome, direc
        notify("任务已添加至今日", "success");
     });
   }
+  
+  // [NEW] Open Base Button Handler
+  const handleOpenBase = () => {
+      const config = feishuService.getConfig();
+      if (config && config.appToken && config.tableId) {
+          window.open(`https://base.feishu.cn/base/${config.appToken}?table=${config.tableId}`, '_blank');
+      } else {
+          notify("配置信息不完整，无法打开数据表", "error");
+      }
+  };
 
   return (
     <div className="flex h-screen bg-slate-950 text-slate-200 font-sans overflow-hidden">
@@ -1072,7 +1102,10 @@ const DesktopView = ({ onLogout, onSettings, notify, isDemoMode, onGoHome, direc
                    <div className="relative z-10">
                       <h2 className="text-3xl font-bold mb-2">{getGreeting()}</h2>
                       <p className="text-indigo-100 mb-8 opacity-80 font-medium">“{quote}”</p>
-                      <button onClick={() => setIsQuickCaptureOpen(true)} className="bg-white text-indigo-600 px-6 py-3 rounded-xl font-bold text-sm hover:bg-indigo-50 transition-colors shadow-lg flex items-center gap-2"><Plus size={18}/> 记点什么</button>
+                      <div className="flex gap-3">
+                          <button onClick={() => setIsQuickCaptureOpen(true)} className="bg-white text-indigo-600 px-6 py-3 rounded-xl font-bold text-sm hover:bg-indigo-50 transition-colors shadow-lg flex items-center gap-2"><Plus size={18}/> 记点什么</button>
+                          <button onClick={handleOpenBase} className="bg-indigo-500/20 border border-indigo-400/30 text-indigo-100 px-6 py-3 rounded-xl font-bold text-sm hover:bg-indigo-500/30 transition-colors flex items-center gap-2"><ExternalLink size={18}/> 打开数据表</button>
+                      </div>
                    </div>
                 </div>
 
