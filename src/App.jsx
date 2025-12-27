@@ -25,20 +25,6 @@ const PRIORITY = { HIGH: "紧急", NORMAL: "普通", LOW: "不急" };
 // 全局统一的内容方向配置
 const CONTENT_DIRECTIONS = ["AI", "提效工具", "个人成长", "投资", "新媒体", "创业", "工作", "金句", "生活", "学习", "其他"];
 
-/**
- * --- UTILS ---
- */
-const extractTags = (text) => {
-  if (!text) return [];
-  const regex = /#(\S+)/g;
-  const matches = [];
-  let match;
-  while ((match = regex.exec(text)) !== null) {
-    matches.push(match[1]);
-  }
-  return matches;
-};
-
 // 问候语逻辑
 const getGreeting = () => {
   const hour = new Date().getHours();
@@ -62,10 +48,9 @@ const getTypeIcon = (type) => {
 };
 
 // 获取本地日期字符串 (YYYY-MM-DD)
-const getLocalDateString = () => {
-  const now = new Date();
-  const offset = now.getTimezoneOffset() * 60000;
-  const localDate = new Date(now.getTime() - offset);
+const getLocalDateString = (date = new Date()) => {
+  const offset = date.getTimezoneOffset() * 60000;
+  const localDate = new Date(date.getTime() - offset);
   return localDate.toISOString().split('T')[0];
 };
 
@@ -74,10 +59,10 @@ const getLocalDateString = () => {
  */
 const MOCK_DATA = [
   { id: '101', fields: { "标题": "👋 欢迎使用 LifeOS！", "内容": "点击卡片编辑详情。", "状态": STATUS.INBOX, "类型": TYPE.IDEA, "优先级": PRIORITY.NORMAL, "内容方向": "个人成长", "来源": "PC", "记录日期": Date.now() } },
-  { id: '102', fields: { "标题": "🔥 今日紧急任务", "状态": STATUS.TODO, "类型": TYPE.TASK, "优先级": PRIORITY.HIGH, "内容方向": "提效工具", "来源": "PC", "截止日期": Date.now(), "标签": ["工作"], "记录日期": Date.now() - 100000 } },
+  { id: '102', fields: { "标题": "🔥 今日紧急任务", "状态": STATUS.TODO, "类型": TYPE.TASK, "优先级": PRIORITY.HIGH, "内容方向": "提效工具", "来源": "PC", "截止日期": Date.now(), "记录日期": Date.now() - 100000 } },
   { id: '103', fields: { "标题": "正在进行的任务", "状态": STATUS.DOING, "类型": TYPE.TASK, "优先级": PRIORITY.NORMAL, "内容方向": "提效工具", "来源": "PC", "截止日期": Date.now(), "记录日期": Date.now() - 200000 } },
   { id: '104', fields: { "标题": "已完成的任务", "状态": STATUS.DONE, "类型": TYPE.TASK, "优先级": PRIORITY.NORMAL, "内容方向": "个人成长", "来源": "Mobile", "截止日期": Date.now(), "记录日期": Date.now() - 300000 } },
-  { id: '105', fields: { "标题": "关于效率工具的思考 #PKM", "内容": "工具只是手段...", "状态": STATUS.DONE, "类型": TYPE.NOTE, "标签": ["PKM"], "内容方向": "个人成长", "来源": "PC", "记录日期": Date.now() - 400000 } },
+  { id: '105', fields: { "标题": "关于效率工具的思考", "内容": "工具只是手段...", "状态": STATUS.DONE, "类型": TYPE.NOTE, "内容方向": "个人成长", "来源": "PC", "记录日期": Date.now() - 400000 } },
 ];
 
 /**
@@ -151,9 +136,10 @@ class FeishuService {
     this.API_BASE = '/api/feishu'; 
     this.isPreview = typeof window !== 'undefined' && window.location.protocol === 'blob:';
     
+    // [UPDATED] Removed "标签"
     this.REQUIRED_FIELDS = [
       "标题", "内容", "状态", "类型", "优先级", 
-      "内容方向", "来源", "标签", "下一步", 
+      "内容方向", "来源", "下一步", 
       "截止日期", "记录日期"
     ];
   }
@@ -178,7 +164,7 @@ class FeishuService {
       await new Promise(resolve => setTimeout(resolve, 300)); 
       if (endpoint.includes('tenant_access_token')) return { tenant_access_token: 'mock_token' };
       if (endpoint.includes('/records') && method === 'GET') return { items: MOCK_DATA };
-      // [NEW] Mocking fields request for preview
+      // Mocking fields request for preview
       if (endpoint.includes('/fields')) return { items: [{ field_name: "内容方向", property: { options: CONTENT_DIRECTIONS.map(name => ({ name })) } }] };
       return { code: 0, msg: "success", data: {} };
     }
@@ -209,7 +195,7 @@ class FeishuService {
     return data ? data.tenant_access_token : null;
   }
 
-  // [NEW] Fetch field options from Feishu
+  // Fetch field options from Feishu
   async fetchFieldOptions(fieldName) {
     try {
       const { config, token } = await this.checkConfigOrThrow();
@@ -254,6 +240,7 @@ class FeishuService {
   async addRecord(data) {
     const { config, token } = await this.checkConfigOrThrow();
     
+    // [FIX] 标题自动截取：20字符
     let finalTitle = data.title;
     if (!finalTitle && data.content) {
        const firstLine = data.content.split('\n')[0];
@@ -261,8 +248,6 @@ class FeishuService {
     } else if (finalTitle && finalTitle.length > 20) {
         finalTitle = finalTitle.substring(0, 20) + "...";
     }
-
-    const autoTags = extractTags((finalTitle || "") + " " + (data.content || ""));
 
     const fields = {
       "标题": finalTitle || "无标题记录", 
@@ -276,8 +261,6 @@ class FeishuService {
     };
     if (data.nextActions && data.nextActions.length > 0) fields["下一步"] = data.nextActions;
     if (data.dueDate) fields["截止日期"] = new Date(data.dueDate).getTime();
-    if (autoTags.length > 0) fields["标签"] = autoTags;
-    else if (data.tags && data.tags.length > 0) fields["标签"] = data.tags;
     
     const res = await this.request(`/bitable/v1/apps/${config.appToken}/tables/${config.tableId}/records`, 'POST', { fields }, token);
     return res.record;
@@ -335,7 +318,7 @@ const FeatureCard = ({ icon, color, title, desc }) => (
   </div>
 );
 
-// [UPDATED] StepCard with Icons - Using safe icons
+// StepCard with Icons
 const StepCard = ({ icon: Icon, title, desc }) => (
   <div className="bg-slate-900 p-6 rounded-2xl border border-slate-800 text-center relative z-10 group hover:border-slate-700 transition-colors">
     <div className="w-14 h-14 bg-slate-800 text-indigo-400 rounded-2xl flex items-center justify-center mx-auto mb-6 border-4 border-slate-950 shadow-xl shadow-indigo-900/10 group-hover:scale-110 transition-transform duration-300">
@@ -363,7 +346,6 @@ const FieldGuide = () => {
               <div className="p-1.5 bg-slate-900 rounded border border-slate-800">下一步 (多选: 学习/整理/分享...)</div>
               <div className="p-1.5 bg-slate-900 rounded border border-slate-800">内容方向 (单选)</div>
               <div className="p-1.5 bg-slate-900 rounded border border-slate-800">来源 (单选: Mobile/PC)</div>
-              <div className="p-1.5 bg-slate-900 rounded border border-slate-800">标签 (多选/文本)</div>
               <div className="p-1.5 bg-slate-900 rounded border border-slate-800">截止日期 (日期)</div>
               <div className="p-1.5 bg-slate-900 rounded border border-slate-800">记录日期 (日期)</div>
            </div>
@@ -404,8 +386,7 @@ const EditRecordModal = ({ isOpen, record, onClose, onSave, directions }) => {
 
   useEffect(() => {
     if (record) {
-      const tags = record.fields["标签"] || [];
-      const tagsStr = Array.isArray(tags) ? tags.join(", ") : (tags || "");
+      // Handle Date Input format (YYYY-MM-DD)
       let dateStr = "";
       if (record.fields["截止日期"]) { dateStr = new Date(record.fields["截止日期"]).toISOString().split('T')[0]; }
 
@@ -415,7 +396,6 @@ const EditRecordModal = ({ isOpen, record, onClose, onSave, directions }) => {
         "状态": record.fields["状态"] || STATUS.INBOX,
         "类型": record.fields["类型"] || TYPE.IDEA, 
         "优先级": record.fields["优先级"] || PRIORITY.NORMAL,
-        "标签": tagsStr,
         "内容方向": record.fields["内容方向"] || "个人成长",
         "下一步": record.fields["下一步"] || [],
         "截止日期": dateStr
@@ -427,8 +407,6 @@ const EditRecordModal = ({ isOpen, record, onClose, onSave, directions }) => {
     const fieldsToSave = { ...formData };
     if (fieldsToSave["截止日期"]) fieldsToSave["截止日期"] = new Date(fieldsToSave["截止日期"]).getTime();
     else fieldsToSave["截止日期"] = null;
-    if (fieldsToSave["标签"]) fieldsToSave["标签"] = fieldsToSave["标签"].split(/[,，]/).map(t => t.trim()).filter(Boolean);
-    else fieldsToSave["标签"] = null;
     onSave(record.id, fieldsToSave);
   };
   
@@ -436,6 +414,12 @@ const EditRecordModal = ({ isOpen, record, onClose, onSave, directions }) => {
     const current = formData["下一步"] || [];
     const updated = current.includes(action) ? current.filter(a => a !== action) : [...current, action];
     setFormData({ ...formData, "下一步": updated });
+  };
+  
+  const setQuickDate = (days) => {
+      const date = new Date();
+      date.setDate(date.getDate() + days);
+      setFormData({...formData, "截止日期": date.toISOString().split('T')[0]});
   };
 
   if (!isOpen || !record) return null;
@@ -445,14 +429,22 @@ const EditRecordModal = ({ isOpen, record, onClose, onSave, directions }) => {
       <div className="space-y-4">
         <div><label className="text-xs font-bold text-slate-500 uppercase block mb-1">标题</label><input className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-white focus:border-indigo-500 outline-none" value={formData["标题"]} onChange={e => setFormData({...formData, "标题": e.target.value})} /></div>
         <div><label className="text-xs font-bold text-slate-500 uppercase block mb-1">内容 / 备注</label><textarea className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-slate-300 focus:border-indigo-500 outline-none resize-none h-24" value={formData["内容"]} onChange={e => setFormData({...formData, "内容": e.target.value})} /></div>
-        <div><label className="text-xs font-bold text-slate-500 uppercase block mb-1">标签 (自动提取 #)</label><div className="flex items-center gap-2 bg-slate-950 border border-slate-800 rounded-lg p-2"><Hash size={16} className="text-slate-500" /><input className="w-full bg-transparent text-slate-300 outline-none" placeholder="AI, 效率" value={formData["标签"]} onChange={e => setFormData({...formData, "标签": e.target.value})} /></div></div>
         <div className="grid grid-cols-2 gap-4">
            <div><label className="text-xs font-bold text-slate-500 uppercase block mb-1">状态</label><select className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-slate-300 outline-none" value={formData["状态"]} onChange={e => setFormData({...formData, "状态": e.target.value})}>{[STATUS.INBOX, STATUS.TODO, STATUS.DOING, STATUS.DONE].map(o => <option key={o} value={o}>{o}</option>)}</select></div>
            <div><label className="text-xs font-bold text-slate-500 uppercase block mb-1">优先级</label><select className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-slate-300 outline-none" value={formData["优先级"]} onChange={e => setFormData({...formData, "优先级": e.target.value})}>{[PRIORITY.HIGH, PRIORITY.NORMAL, PRIORITY.LOW].map(o => <option key={o} value={o}>{o}</option>)}</select></div>
         </div>
         <div className="grid grid-cols-2 gap-4">
            <div><label className="text-xs font-bold text-slate-500 uppercase block mb-1">类型</label><select className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-slate-300 outline-none" value={formData["类型"]} onChange={e => setFormData({...formData, "类型": e.target.value})}>{[TYPE.IDEA, TYPE.TASK, TYPE.NOTE, TYPE.JOURNAL].map(o => <option key={o} value={o}>{o}</option>)}</select></div>
-           <div><label className="text-xs font-bold text-slate-500 uppercase block mb-1">截止日期</label><input type="date" className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-slate-300 outline-none" value={formData["截止日期"] || ""} onChange={e => setFormData({...formData, "截止日期": e.target.value})} /></div>
+           <div>
+               <label className="text-xs font-bold text-slate-500 uppercase block mb-1">截止日期</label>
+               <input type="date" className="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-slate-300 outline-none" value={formData["截止日期"] || ""} onChange={e => setFormData({...formData, "截止日期": e.target.value})} />
+               {/* [NEW] Quick Date Buttons */}
+               <div className="flex gap-2 mt-2">
+                   <button onClick={() => setQuickDate(0)} className="text-[10px] px-2 py-1 bg-slate-800 hover:bg-slate-700 rounded text-slate-400">今天</button>
+                   <button onClick={() => setQuickDate(1)} className="text-[10px] px-2 py-1 bg-slate-800 hover:bg-slate-700 rounded text-slate-400">明天</button>
+                   <button onClick={() => setQuickDate(7)} className="text-[10px] px-2 py-1 bg-slate-800 hover:bg-slate-700 rounded text-slate-400">下周</button>
+               </div>
+           </div>
         </div>
         <div><label className="text-xs font-bold text-slate-500 uppercase block mb-1">内容方向</label><div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">{directions.map(d => <button key={d} onClick={() => setFormData({...formData, "内容方向": d})} className={`px-2 py-1 rounded border text-xs whitespace-nowrap ${formData["内容方向"] === d ? 'bg-indigo-500/20 border-indigo-500 text-indigo-300' : 'bg-slate-950 border-slate-800 text-slate-500'}`}>{d}</button>)}</div></div>
         <div><label className="text-xs font-bold text-slate-500 uppercase block mb-1">下一步动作</label><div className="flex flex-wrap gap-2">{actionsList.map(a => (<button key={a} onClick={() => toggleAction(a)} className={`px-2 py-1 rounded border text-xs flex items-center gap-1 ${formData["下一步"]?.includes(a) ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300' : 'bg-slate-900 border-slate-800 text-slate-500'}`}>{formData["下一步"]?.includes(a) && <Check size={10}/>} {a}</button>))}</div></div>
@@ -573,7 +565,7 @@ const KanbanCard = ({ item, onMove, onClick }) => (
 const WelcomeScreen = ({ onStart }) => (
   <div className="min-h-screen bg-slate-950 text-slate-200 font-sans">
     <nav className="flex items-center justify-between px-6 py-6 max-w-7xl mx-auto border-b border-slate-800/50"><Logo /><button onClick={onStart} className="px-4 py-2 text-sm font-bold text-slate-300 bg-slate-800/50 border border-slate-700 rounded-lg hover:bg-slate-700 hover:text-white transition-all">开启体验 / 登录</button></nav>
-    <div className="max-w-4xl mx-auto px-6 pt-20 pb-20 text-center animate-fade-in-up"><div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/10 text-indigo-400 text-xs font-bold uppercase tracking-wider mb-6 border border-indigo-500/20">v3.3 AI Enhanced</div><h1 className="text-5xl md:text-7xl font-extrabold text-white tracking-tight mb-8 leading-tight">掌控你的 <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400">数字人生</span></h1><p className="text-xl md:text-2xl text-slate-400 mb-10 max-w-2xl mx-auto leading-relaxed">AI 驱动的极速录入 · 深度管理任务 · 数据完全私有</p><button onClick={onStart} className="group relative inline-flex items-center justify-center px-8 py-4 font-bold text-white transition-all duration-200 bg-indigo-600 rounded-full hover:bg-indigo-500 hover:shadow-lg hover:shadow-indigo-500/25 hover:-translate-y-1">开启 LifeOS <ArrowRight className="ml-2 w-5 h-5 group-hover:translate-x-1 transition-transform" /></button></div>
+    <div className="max-w-4xl mx-auto px-6 pt-20 pb-20 text-center animate-fade-in-up"><div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/10 text-indigo-400 text-xs font-bold uppercase tracking-wider mb-6 border border-indigo-500/20">v3.4 Simplified</div><h1 className="text-5xl md:text-7xl font-extrabold text-white tracking-tight mb-8 leading-tight">掌控你的 <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400">数字人生</span></h1><p className="text-xl md:text-2xl text-slate-400 mb-10 max-w-2xl mx-auto leading-relaxed">AI 驱动的极速录入 · 深度管理任务 · 数据完全私有</p><button onClick={onStart} className="group relative inline-flex items-center justify-center px-8 py-4 font-bold text-white transition-all duration-200 bg-indigo-600 rounded-full hover:bg-indigo-500 hover:shadow-lg hover:shadow-indigo-500/25 hover:-translate-y-1">开启 LifeOS <ArrowRight className="ml-2 w-5 h-5 group-hover:translate-x-1 transition-transform" /></button></div>
     <div className="bg-slate-900/50 py-24 border-y border-slate-800/50"><div className="max-w-7xl mx-auto px-6"><div className="grid md:grid-cols-3 gap-8"><FeatureCard icon={<Smartphone size={24} />} color="text-blue-400 bg-blue-400/10" title="极速捕获" desc="专为手机设计的输入界面，随时随地记录灵感。" /><FeatureCard icon={<Shield size={24} />} color="text-emerald-400 bg-emerald-400/10" title="数据隐私" desc="BYOK 架构。数据直连飞书，密钥本地存储，不经过第三方服务器。" /><FeatureCard icon={<Activity size={24} />} color="text-purple-400 bg-purple-400/10" title="GTD 工作流" desc="内置收件箱、下一步行动、优先级管理，让一切井井有条。" /></div></div></div>
     <div className="py-24"><div className="max-w-6xl mx-auto px-6"><div className="text-center mb-16"><h2 className="text-3xl font-bold text-white mb-4">只需三步，即刻开启</h2><p className="text-slate-500">连接飞书，无需复杂的服务器配置。</p></div><div className="grid md:grid-cols-3 gap-8 relative"><div className="hidden md:block absolute top-10 left-0 w-full h-0.5 bg-slate-800 -z-10"></div><StepCard icon={Table} title="复制标准模版" desc="点击右下角按钮，将标准表格模版复制到你的飞书。" /><StepCard icon={Key} title="获取 API 密钥" desc="复制浏览器地址栏的 Base ID 和 Table ID。" /><StepCard icon={Rocket} title="开始使用" desc="填入配置，立即连接你的私人数据库。" /></div></div></div>
     <footer className="bg-slate-950 border-t border-slate-800 text-slate-500 py-12 text-center text-sm"><div className="max-w-2xl mx-auto px-4"><div className="flex flex-wrap justify-center gap-6 font-medium mb-8 text-slate-400"><div className="flex items-center gap-2"><User size={14} /><span>作者：小鲸</span></div><div className="flex items-center gap-2"><Mail size={14} /><span>1584897236@qq.com</span></div><div className="flex items-center gap-2"><MessageCircle size={14} /><span>微信：zhaoqi3210</span></div><a href="https://www.xiaojingfy.com" target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 hover:text-indigo-400 transition-colors"><Globe size={14} /><span>www.xiaojingfy.com</span></a></div><p className="opacity-50 text-xs">© 2025 LifeOS. Designed for productivity.</p></div></footer>
@@ -846,7 +838,13 @@ const MobileView = ({ onSettings, notify, directions }) => {
                     <button key={t} onClick={() => setDetails({...details, type: t})} className={`flex-1 py-2 rounded-lg text-xs font-medium border transition-colors ${details.type === t ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-slate-800 border-slate-700 text-slate-400'}`}>{t}</button>
                  ))}
               </div>
-              {details.type === TYPE.TASK && (<input type="date" className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-600 focus:outline-none focus:border-indigo-500 mb-2" onChange={e => setDetails({...details, dueDate: e.target.value})} />)}
+              {details.type === TYPE.TASK && (
+                  <div className="flex items-center gap-2 mb-2 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+                      <Calendar size={16} className="text-slate-500" />
+                      <span className="text-xs text-slate-500">截止日期:</span>
+                      <input type="date" className="bg-transparent text-sm text-slate-600 focus:outline-none w-full" onChange={e => setDetails({...details, dueDate: e.target.value})} />
+                  </div>
+              )}
               <textarea className="w-full bg-slate-50 rounded-xl p-3 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none h-20 text-slate-800" placeholder="添加备注..." value={details.note} onChange={e => setDetails({...details, note: e.target.value})} />
             </div>
           )}
@@ -1055,6 +1053,7 @@ const DesktopView = ({ onLogout, onSettings, notify, isDemoMode, onGoHome, direc
   const handleOpenBase = () => {
       const config = feishuService.getConfig();
       if (config && config.appToken && config.tableId) {
+          // Use ai.feishu.cn as the domain
           window.open(`https://ai.feishu.cn/base/${config.appToken}?table=${config.tableId}`, '_blank');
       } else {
           notify("配置信息不完整，无法打开数据表", "error");
