@@ -1616,12 +1616,9 @@ const MobileView = ({ onSettings, onGoHome, notify, directions, isPreview = fals
                 {todayTasks.map(item => {
                   const isDone = item.fields["状态"] === STATUS.DONE;
                   return (
-                    <div key={item.id} onClick={() => setEditingItem(item)} className={`bg-slate-900 p-4 rounded-xl border flex items-center justify-between active:scale-[0.98] transition-transform ${isDone ? 'border-slate-800 opacity-50' : 'border-slate-800'}`}>
-                      <span className={`text-sm font-medium ${isDone ? 'text-slate-500 line-through' : 'text-slate-200'}`}>{item.fields["标题"]}</span>
-                      <div className="flex gap-2">
-                        <button onClick={(e) => { e.stopPropagation(); if (!isDone) handleDone(item.id); }} className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${isDone ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-slate-600 text-transparent hover:border-emerald-500'}`}><Check size={14}/></button>
-                        <button onClick={(e) => { e.stopPropagation(); handleDelete(item.id); }} className="w-6 h-6 rounded-full border-2 border-slate-600 flex items-center justify-center text-slate-400 hover:border-red-500 hover:text-red-400 transition-colors"><Trash2 size={12}/></button>
-                      </div>
+                    <div key={item.id} className={`bg-slate-900 p-4 rounded-xl border flex items-center justify-between active:scale-[0.98] transition-transform ${isDone ? 'border-slate-800 opacity-50' : 'border-slate-800'}`}>
+                      <span onClick={() => setEditingItem(item)} className={`text-sm font-medium flex-1 ${isDone ? 'text-slate-500 line-through' : 'text-slate-200'}`}>{item.fields["标题"]}</span>
+                      <button onClick={(e) => { e.stopPropagation(); if (!isDone) handleDone(item.id); }} className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${isDone ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-slate-600 text-transparent hover:border-emerald-500'}`}><Check size={14}/></button>
                     </div>
                   );
                 })}
