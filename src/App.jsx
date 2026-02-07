@@ -1625,26 +1625,47 @@ const MobileView = ({ onSettings, onGoHome, notify, directions, isPreview = fals
                     </div>
                   );
                 })}
-                {todayTasks.length === 0 && <div className="text-center text-slate-600 py-4 text-sm">今日暂无待办</div>}
+                {todayTasks.length === 0 && (
+                  <div className="text-center py-8">
+                    <CheckCircle size={40} className="mx-auto text-slate-700 mb-3" />
+                    <p className="text-slate-500 text-sm mb-1">今日暂无待办</p>
+                    <p className="text-slate-600 text-xs">在上方输入框添加新任务</p>
+                  </div>
+                )}
               </div>
             </div>
 
             {/* 收件箱 */}
             <div className="mt-8">
-              <h2 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3 ml-2 flex items-center gap-2"><Inbox size={12}/> 收件箱</h2>
+              <h2 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3 ml-2 flex items-center justify-between">
+                <span className="flex items-center gap-2"><Inbox size={12}/> 收件箱</span>
+                <span className="text-slate-600 font-normal">{inboxItems.length}</span>
+              </h2>
               <div className="space-y-3">
                 {inboxItems.slice(0, 10).map(item => (
                   <div key={item.id} onClick={() => setEditingItem(item)} className="bg-slate-900 p-4 rounded-xl border border-slate-800 flex justify-between items-start active:scale-[0.98] transition-transform">
-                    <div>
+                    <div className="flex-1">
                       <div className="text-slate-200 font-medium line-clamp-2 text-sm">{item.fields["标题"]}</div>
                       <div className="flex items-center gap-2 mt-2">
                         {getTypeIcon(item.fields["类型"])}
                         <span className="text-[10px] text-slate-500">{item.fields["记录日期"] ? new Date(item.fields["记录日期"]).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '刚刚'}</span>
                       </div>
                     </div>
-                    <div className="text-slate-600"><Edit3 size={16} /></div>
+                    <div className="flex items-center gap-2">
+                      <button onClick={(e) => { e.stopPropagation(); handleDelete(item.id); }} className="p-1.5 text-slate-500 hover:text-red-400 active:scale-90 transition-all">
+                        <Trash2 size={14} />
+                      </button>
+                      <div className="text-slate-600"><Edit3 size={16} /></div>
+                    </div>
                   </div>
                 ))}
+                {inboxItems.length === 0 && (
+                  <div className="text-center py-8">
+                    <Inbox size={40} className="mx-auto text-slate-700 mb-3" />
+                    <p className="text-slate-500 text-sm mb-1">收件箱为空</p>
+                    <p className="text-slate-600 text-xs">点击右下角按钮添加内容</p>
+                  </div>
+                )}
               </div>
             </div>
           </>
@@ -1652,7 +1673,10 @@ const MobileView = ({ onSettings, onGoHome, notify, directions, isPreview = fals
 
         {activeTab === 'knowledge' && (
           <div className="mt-6">
-            <h2 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3 ml-2 flex items-center gap-2"><BookOpen size={12}/> 知识库</h2>
+            <h2 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3 ml-2 flex items-center justify-between">
+              <span className="flex items-center gap-2"><BookOpen size={12}/> 知识库</span>
+              <span className="text-slate-600 font-normal">{knowledgeItems.length}</span>
+            </h2>
             <div className="space-y-3">
               {knowledgeItems.map(item => (
                 <div key={item.id} onClick={() => setEditingItem(item)} className="bg-slate-900 p-4 rounded-xl border border-slate-800 flex justify-between items-start active:scale-[0.98] transition-transform">
@@ -1661,10 +1685,21 @@ const MobileView = ({ onSettings, onGoHome, notify, directions, isPreview = fals
                     <div className="text-xs text-slate-500 mt-1">{item.fields["内容方向"]}</div>
                     <div className="text-[10px] text-slate-600 mt-2">{item.fields["记录日期"] ? new Date(item.fields["记录日期"]).toLocaleDateString() : ''}</div>
                   </div>
-                  <div className="text-slate-600"><Edit3 size={16} /></div>
+                  <div className="flex items-center gap-2">
+                    <button onClick={(e) => { e.stopPropagation(); handleDelete(item.id); }} className="p-1.5 text-slate-500 hover:text-red-400 active:scale-90 transition-all">
+                      <Trash2 size={14} />
+                    </button>
+                    <div className="text-slate-600"><Edit3 size={16} /></div>
+                  </div>
                 </div>
               ))}
-              {knowledgeItems.length === 0 && <div className="text-center text-slate-600 py-8 text-sm">暂无笔记记录</div>}
+              {knowledgeItems.length === 0 && (
+                <div className="text-center py-8">
+                  <BookOpen size={40} className="mx-auto text-slate-700 mb-3" />
+                  <p className="text-slate-500 text-sm mb-1">暂无笔记</p>
+                  <p className="text-slate-600 text-xs">记录你的知识和想法</p>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -2124,25 +2159,34 @@ const DesktopView = ({ onSettings, onGoHome, notify, directions, isPreview = fal
                   </form>
                 )}
                 <div className="space-y-2 max-h-[300px] overflow-y-auto custom-scrollbar">
-                  {allTodayTasks.map(item => {
+                  {todayTasks.map(item => {
                     const isDone = item.fields["状态"] === STATUS.DONE;
+                    const priority = item.fields["优先级"];
+                    const priorityColor = priority === PRIORITY.HIGH ? 'bg-red-500' : priority === PRIORITY.LOW ? 'bg-slate-500' : 'bg-yellow-500';
                     return (
                       <div key={item.id} className={`flex items-center gap-3 p-3 rounded-xl border transition-all cursor-pointer group ${isDone ? 'bg-slate-900 border-slate-800 opacity-50' : 'bg-slate-800/50 border-slate-700 hover:border-indigo-500/50'}`}>
                         <button onClick={(e) => { e.stopPropagation(); if (!isDone) handleDone(item.id); }} className={`w-5 h-5 rounded flex items-center justify-center shrink-0 transition-all ${isDone ? 'bg-emerald-500 text-white' : 'border-2 border-slate-500 hover:border-emerald-500'}`}>
                           {isDone && <Check size={12} />}
                         </button>
+                        {priority === PRIORITY.HIGH && !isDone && <span className={`w-2 h-2 rounded-full ${priorityColor} shrink-0`} title="紧急"></span>}
                         <span onClick={() => setEditingItem(item)} className={`flex-1 text-sm ${isDone ? 'text-slate-500 line-through' : 'text-slate-200'}`}>{item.fields["标题"]}</span>
                         <button onClick={(e) => { e.stopPropagation(); handleDelete(item.id); }} className="opacity-0 group-hover:opacity-100 p-1 text-slate-500 hover:text-red-400 transition-all"><Trash2 size={14} /></button>
                       </div>
                     );
                   })}
-                  {allTodayTasks.length === 0 && <div className="text-center text-slate-600 py-8">今日暂无任务</div>}
+                  {todayTasks.length === 0 && (
+                    <div className="text-center py-8">
+                      <CheckCircle size={40} className="mx-auto text-slate-700 mb-3" />
+                      <p className="text-slate-500 text-sm mb-1">今日暂无任务</p>
+                      <p className="text-slate-600 text-xs">在上方输入框添加新任务</p>
+                    </div>
+                  )}
                 </div>
               </div>
               <div className="col-span-1 bg-slate-900 border border-slate-800 rounded-xl p-6">
                 <div className="flex items-center justify-between mb-4">
                   <h2 className="text-lg font-bold flex items-center gap-2"><Inbox className="text-blue-400" size={20} /> 收件箱</h2>
-                  <button onClick={() => setActiveTab('inbox')} className="text-xs text-indigo-400 hover:text-indigo-300">查看全部</button>
+                  <span className="text-xs text-slate-500">{inboxItems.length}</span>
                 </div>
                 <div className="space-y-2 max-h-[300px] overflow-y-auto custom-scrollbar">
                   {inboxItems.slice(0, 8).map(item => (
@@ -2152,7 +2196,12 @@ const DesktopView = ({ onSettings, onGoHome, notify, directions, isPreview = fal
                       <ChevronRight className="text-slate-700 group-hover:text-slate-500 shrink-0" size={14} />
                     </div>
                   ))}
-                  {inboxItems.length === 0 && <div className="text-center text-slate-600 py-8 text-sm">收件箱为空</div>}
+                  {inboxItems.length === 0 && (
+                    <div className="text-center py-8">
+                      <Inbox size={32} className="mx-auto text-slate-700 mb-2" />
+                      <p className="text-slate-500 text-xs">收件箱为空</p>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
