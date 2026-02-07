@@ -1382,7 +1382,7 @@ const MobileView = ({ onSettings, onGoHome, notify, directions, isPreview = fals
     try {
       await storageService.addRecord({ title: todayInput, type: TYPE.TASK, status: STATUS.DOING, priority: PRIORITY.NORMAL, dueDate: localDate, direction: "个人成长", source: "Life-OS" });
       notify("任务已添加", "success");
-      loadRecords();
+      await loadRecords();
     } catch (error) {
       setRecords(prev => prev.filter(r => r.id !== tempId));
       notify("添加失败: " + error.message, "error");
@@ -1475,7 +1475,7 @@ const MobileView = ({ onSettings, onGoHome, notify, directions, isPreview = fals
       setDetails({ type: TYPE.IDEA, dueDate: "", note: "" });
       setIsOptimized(false);
       setAiDirection("");
-      loadRecords();
+      await loadRecords();
     } catch (error) {
       notify("发送失败: " + error.message, "error");
     } finally {
@@ -1518,7 +1518,7 @@ const MobileView = ({ onSettings, onGoHome, notify, directions, isPreview = fals
       dueDate: formData.dueDate || null
     });
     notify("已添加记录", "success");
-    loadRecords();
+    await loadRecords();
   };
 
   const handleEditSave = async (id, fields) => {
@@ -1526,7 +1526,7 @@ const MobileView = ({ onSettings, onGoHome, notify, directions, isPreview = fals
       await storageService.updateRecord(id, fields);
       notify("修改已保存", "success");
       setEditingItem(null);
-      loadRecords();
+      await loadRecords();
     } catch (error) {
       notify("保存失败: " + error.message, "error");
     }
@@ -1537,7 +1537,7 @@ const MobileView = ({ onSettings, onGoHome, notify, directions, isPreview = fals
     try {
       await storageService.updateRecord(id, { "状态": STATUS.DONE });
       notify("任务完成", "success");
-      loadRecords();
+      await loadRecords();
     } catch (error) {
       setRecords(prev => prev.map(r => r.id === id ? { ...r, fields: { ...r.fields, "状态": STATUS.DOING } } : r));
       notify("操作失败: " + error.message, "error");
@@ -1613,7 +1613,7 @@ const MobileView = ({ onSettings, onGoHome, notify, directions, isPreview = fals
                 </form>
               )}
               <div className="space-y-2">
-                {allTodayTasks.map(item => {
+                {todayTasks.map(item => {
                   const isDone = item.fields["状态"] === STATUS.DONE;
                   return (
                     <div key={item.id} onClick={() => setEditingItem(item)} className={`bg-slate-900 p-4 rounded-xl border flex items-center justify-between active:scale-[0.98] transition-transform ${isDone ? 'border-slate-800 opacity-50' : 'border-slate-800'}`}>
@@ -1625,7 +1625,7 @@ const MobileView = ({ onSettings, onGoHome, notify, directions, isPreview = fals
                     </div>
                   );
                 })}
-                {allTodayTasks.length === 0 && <div className="text-center text-slate-600 py-4 text-sm">今日暂无待办</div>}
+                {todayTasks.length === 0 && <div className="text-center text-slate-600 py-4 text-sm">今日暂无待办</div>}
               </div>
             </div>
 
@@ -1836,7 +1836,7 @@ const DesktopView = ({ onSettings, onGoHome, notify, directions, isPreview = fal
     try {
       await storageService.addRecord({ title: todayInput, type: TYPE.TASK, status: STATUS.DOING, priority: PRIORITY.NORMAL, dueDate: localDate, direction: "个人成长", source: "Life-OS" });
       notify("任务已添加", "success");
-      loadRecords();
+      await loadRecords();
     } catch (error) {
       setRecords(prev => prev.filter(r => r.id !== tempId));
       notify("添加失败: " + error.message, "error");
@@ -1848,7 +1848,7 @@ const DesktopView = ({ onSettings, onGoHome, notify, directions, isPreview = fal
       await storageService.updateRecord(id, fields);
       notify("修改已保存", "success");
       setEditingItem(null);
-      loadRecords();
+      await loadRecords();
     } catch (error) {
       notify("保存失败: " + error.message, "error");
     }
@@ -1859,7 +1859,7 @@ const DesktopView = ({ onSettings, onGoHome, notify, directions, isPreview = fal
     try {
       await storageService.updateRecord(id, { "状态": STATUS.DONE });
       notify("任务完成", "success");
-      loadRecords();
+      await loadRecords();
     } catch (error) {
       setRecords(prev => prev.map(r => r.id === id ? { ...r, fields: { ...r.fields, "状态": STATUS.DOING } } : r));
       notify("操作失败: " + error.message, "error");
@@ -1871,7 +1871,7 @@ const DesktopView = ({ onSettings, onGoHome, notify, directions, isPreview = fal
     try {
       await storageService.deleteRecord(id);
       notify("已删除", "success");
-      loadRecords();
+      await loadRecords();
     } catch (error) {
       notify("删除失败: " + error.message, "error");
     }
@@ -1927,7 +1927,7 @@ const DesktopView = ({ onSettings, onGoHome, notify, directions, isPreview = fal
       setQuickInput("");
       setIsOptimized(false);
       setAiDirection("");
-      loadRecords();
+      await loadRecords();
     } catch (error) {
       notify("添加失败: " + error.message, "error");
     } finally {
@@ -1971,7 +1971,7 @@ const DesktopView = ({ onSettings, onGoHome, notify, directions, isPreview = fal
       dueDate: formData.dueDate || null
     });
     notify("已添加记录", "success");
-    loadRecords();
+    await loadRecords();
   };
 
   const inboxItems = records.filter(r => r.fields["状态"] === STATUS.INBOX && r.fields["类型"] !== TYPE.JOURNAL);
