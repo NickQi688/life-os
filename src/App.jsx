@@ -1651,12 +1651,7 @@ const MobileView = ({ onSettings, onGoHome, notify, directions, isPreview = fals
                         <span className="text-[10px] text-slate-500">{item.fields["记录日期"] ? new Date(item.fields["记录日期"]).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '刚刚'}</span>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <button onClick={(e) => { e.stopPropagation(); handleDelete(item.id); }} className="p-1.5 text-slate-500 hover:text-red-400 active:scale-90 transition-all">
-                        <Trash2 size={14} />
-                      </button>
-                      <div className="text-slate-600"><Edit3 size={16} /></div>
-                    </div>
+                    <div className="text-slate-600"><Edit3 size={16} /></div>
                   </div>
                 ))}
                 {inboxItems.length === 0 && (
@@ -1685,12 +1680,7 @@ const MobileView = ({ onSettings, onGoHome, notify, directions, isPreview = fals
                     <div className="text-xs text-slate-500 mt-1">{item.fields["内容方向"]}</div>
                     <div className="text-[10px] text-slate-600 mt-2">{item.fields["记录日期"] ? new Date(item.fields["记录日期"]).toLocaleDateString() : ''}</div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <button onClick={(e) => { e.stopPropagation(); handleDelete(item.id); }} className="p-1.5 text-slate-500 hover:text-red-400 active:scale-90 transition-all">
-                      <Trash2 size={14} />
-                    </button>
-                    <div className="text-slate-600"><Edit3 size={16} /></div>
-                  </div>
+                  <div className="text-slate-600"><Edit3 size={16} /></div>
                 </div>
               ))}
               {knowledgeItems.length === 0 && (
