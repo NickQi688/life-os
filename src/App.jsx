@@ -71,7 +71,7 @@ const generateTitle = (content) => {
  * --- AI SERVICE ---
  */
 const AI_PROVIDERS = {
-  deepseek:  { label: 'DeepSeek',            endpoint: 'https://api.deepseek.com/chat/completions',                              model: 'deepseek-chat' },
+  deepseek:  { label: 'DeepSeek V3',         endpoint: 'https://api.deepseek.com/chat/completions',                              model: 'deepseek-chat' },
   openai:    { label: 'OpenAI',              endpoint: 'https://api.openai.com/v1/chat/completions',                              model: 'gpt-4o-mini' },
   kimi:      { label: 'Kimi (Moonshot)',     endpoint: 'https://api.moonshot.cn/v1/chat/completions',                             model: 'moonshot-v1-8k' },
   doubao:    { label: '豆包 (火山引擎)',       endpoint: 'https://ark.cn-beijing.volces.com/api/v3/chat/completions',               model: 'ep-你的端点ID' },
@@ -1610,7 +1610,10 @@ const MobileView = ({ onSettings, onGoHome, notify, directions, isPreview = fals
                   return (
                     <div key={item.id} onClick={() => setEditingItem(item)} className={`bg-slate-900 p-4 rounded-xl border flex items-center justify-between active:scale-[0.98] transition-transform ${isDone ? 'border-slate-800 opacity-50' : 'border-slate-800'}`}>
                       <span className={`text-sm font-medium ${isDone ? 'text-slate-500 line-through' : 'text-slate-200'}`}>{item.fields["标题"]}</span>
-                      <button onClick={(e) => { e.stopPropagation(); if (!isDone) handleDone(item.id); }} className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${isDone ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-slate-600 text-transparent hover:border-emerald-500'}`}><Check size={14}/></button>
+                      <div className="flex gap-2">
+                        <button onClick={(e) => { e.stopPropagation(); if (!isDone) handleDone(item.id); }} className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${isDone ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-slate-600 text-transparent hover:border-emerald-500'}`}><Check size={14}/></button>
+                        <button onClick={(e) => { e.stopPropagation(); handleDelete(item.id); }} className="w-6 h-6 rounded-full border-2 border-slate-600 flex items-center justify-center text-slate-400 hover:border-red-500 hover:text-red-400 transition-colors"><Trash2 size={12}/></button>
+                      </div>
                     </div>
                   );
                 })}
@@ -2121,9 +2124,7 @@ const DesktopView = ({ onSettings, onGoHome, notify, directions, isPreview = fal
                           {isDone && <Check size={12} />}
                         </button>
                         <span onClick={() => setEditingItem(item)} className={`flex-1 text-sm ${isDone ? 'text-slate-500 line-through' : 'text-slate-200'}`}>{item.fields["标题"]}</span>
-                        {!isDone && (
-                          <button onClick={(e) => { e.stopPropagation(); handleDelete(item.id); }} className="opacity-0 group-hover:opacity-100 p-1 text-slate-500 hover:text-red-400 transition-all"><Trash2 size={14} /></button>
-                        )}
+                        <button onClick={(e) => { e.stopPropagation(); handleDelete(item.id); }} className="opacity-0 group-hover:opacity-100 p-1 text-slate-500 hover:text-red-400 transition-all"><Trash2 size={14} /></button>
                       </div>
                     );
                   })}
