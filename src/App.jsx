@@ -76,7 +76,7 @@ const AI_PROVIDERS = {
   kimi:      { label: 'Kimi (Moonshot)',     endpoint: 'https://api.moonshot.cn/v1/chat/completions',                             model: 'moonshot-v1-8k' },
   doubao:    { label: '豆包 (火山引擎)',       endpoint: 'https://ark.cn-beijing.volces.com/api/v3/chat/completions',               model: 'ep-你的端点ID' },
   qwen:      { label: '通义千问',             endpoint: 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions',      model: 'qwen-turbo' },
-  gemini:    { label: 'Gemini (OpenRouter)',  endpoint: 'https://openrouter.ai/api/v1/chat/completions',                          model: 'google/gemini-2.0-flash-exp' },
+  gemini:    { label: 'Gemini (OpenRouter)',  endpoint: 'https://openrouter.ai/api/v1/chat/completions',                          model: 'google/gemini-2.0-flash-thinking-exp:free' },
 };
 
 class AiService {
