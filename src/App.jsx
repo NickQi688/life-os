@@ -2214,11 +2214,18 @@ const DesktopView = ({ onSettings, onGoHome, notify, directions, isPreview = fal
                   <h2 className="font-bold mb-4 flex items-center gap-2"><div className={`w-3 h-3 rounded-full ${column.id === 'done' ? 'bg-emerald-500' : column.id === 'doing' ? 'bg-indigo-500' : 'bg-slate-500'}`} />{column.title} ({column.items.length})</h2>
                   <div className="space-y-3">
                     {column.items.map(item => (
-                      <div key={item.id} onClick={() => setEditingItem(item)} className="bg-slate-800 rounded-lg p-4 cursor-pointer hover:bg-slate-700 transition-colors border border-slate-700">
-                        <div className="font-medium text-sm mb-2">{item.fields["标题"]}</div>
-                        <div className="flex items-center justify-between text-xs text-slate-500">
-                          <span>{item.fields["类型"]}</span>
-                          <span>{item.fields["记录日期"] ? new Date(item.fields["记录日期"]).toLocaleDateString() : ''}</span>
+                      <div key={item.id} className="bg-slate-800 rounded-lg p-4 hover:bg-slate-700 transition-colors border border-slate-700 group">
+                        <div className="flex items-start justify-between">
+                          <div onClick={() => setEditingItem(item)} className="flex-1 cursor-pointer">
+                            <div className="font-medium text-sm mb-2">{item.fields["标题"]}</div>
+                            <div className="flex items-center justify-between text-xs text-slate-500">
+                              <span>{item.fields["类型"]}</span>
+                              <span>{item.fields["记录日期"] ? new Date(item.fields["记录日期"]).toLocaleDateString() : ''}</span>
+                            </div>
+                          </div>
+                          <button onClick={(e) => { e.stopPropagation(); handleDelete(item.id); }} className="opacity-0 group-hover:opacity-100 p-1.5 text-slate-500 hover:text-red-400 hover:bg-slate-900 rounded-lg transition-all ml-2">
+                            <Trash2 size={14} />
+                          </button>
                         </div>
                       </div>
                     ))}
