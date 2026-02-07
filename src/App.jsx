@@ -2210,8 +2210,8 @@ const DesktopView = ({ onSettings, onGoHome, notify, directions, isPreview = fal
         )}
 
         {activeTab === 'planner' && (
-          <div className="max-w-7xl mx-auto animate-fade-in">
-            <h1 className="text-3xl font-bold mb-8">计划看板</h1>
+          <div className="max-w-6xl mx-auto animate-fade-in">
+            <h1 className="text-3xl font-bold mb-8 text-center">计划看板</h1>
             <div className="grid grid-cols-4 gap-6">
               {[
                 { id: 'todo', title: '待办', items: todoItems, color: 'border-slate-600' },
