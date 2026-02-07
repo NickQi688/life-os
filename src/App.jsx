@@ -1537,10 +1537,10 @@ const MobileView = ({ onSettings, onGoHome, notify, directions, isPreview = fals
     try {
       await storageService.updateRecord(id, { "状态": STATUS.DONE });
       notify("任务完成", "success");
-      await loadRecords();
     } catch (error) {
       setRecords(prev => prev.map(r => r.id === id ? { ...r, fields: { ...r.fields, "状态": STATUS.DOING } } : r));
       notify("操作失败: " + error.message, "error");
+      await loadRecords(); // 只在失败时重新加载
     }
   };
 
@@ -1894,10 +1894,10 @@ const DesktopView = ({ onSettings, onGoHome, notify, directions, isPreview = fal
     try {
       await storageService.updateRecord(id, { "状态": STATUS.DONE });
       notify("任务完成", "success");
-      await loadRecords();
     } catch (error) {
       setRecords(prev => prev.map(r => r.id === id ? { ...r, fields: { ...r.fields, "状态": STATUS.DOING } } : r));
       notify("操作失败: " + error.message, "error");
+      await loadRecords(); // 只在失败时重新加载
     }
   };
 
