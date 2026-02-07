@@ -137,19 +137,57 @@ class GitHubStorageService {
       }
     ];
 
+    // 检查是否已经存在示例数据（通过检查第一个文件是否存在）
+    const config = this.getConfig();
+    if (!config || !config.token || !config.repo) {
+      console.error("GitHub未配置");
+      return;
+    }
+
+    const { token, repo, branch = 'main', basePath = '' } = config;
+    const firstSamplePath = `${basePath ? basePath + '/' : ''}03-知识库/欢迎使用 Life-OS 🎉_${today}.md`;
+
+    try {
+      const checkResponse = await fetch(`https://api.github.com/repos/${repo}/contents/${firstSamplePath}?ref=${branch}`, {
+        headers: {
+          'Authorization': `token ${token}`,
+        }
+      });
+
+      if (checkResponse.ok) {
+        // 文件已存在，跳过创建
+        console.log("示例数据已存在，跳过创建");
+        return;
+      }
+    } catch (error) {
+      // 文件不存在，继续创建
+      console.log("首次创建示例数据");
+    }
+
     // 批量创建示例数据
+    let successCount = 0;
+    let skipCount = 0;
+
     for (const data of sampleData) {
       try {
         await this.addRecord({
           ...data,
           source: "Life-OS 示例数据"
         });
+        successCount++;
         // 添加延迟避免 GitHub API 速率限制
         await new Promise(resolve => setTimeout(resolve, 500));
       } catch (error) {
-        console.error(`创建示例数据失败: ${data.title}`, error);
+        // 如果是文件已存在的错误，静默跳过
+        if (error.message.includes('already exists') || error.message.includes('409')) {
+          skipCount++;
+        } else {
+          console.error(`创建示例数据失败: ${data.title}`, error);
+        }
       }
     }
+
+    console.log(`示例数据创建完成: 成功 ${successCount} 条, 跳过 ${skipCount} 条`);
   }
 
   /**
