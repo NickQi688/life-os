@@ -187,7 +187,7 @@ class GitHubStorageService {
 
       // 并行扫描所有目录
       for (const dir of dirsToScan) {
-        const fullPath = `${basePath}/${dir}`.replace(/\/+/g, '/');
+        const fullPath = `${basePath}/${dir}`.replace(/\/+/g, '/').replace(/^\//, '');
 
         try {
           const dirResponse = await fetch(
@@ -525,7 +525,7 @@ ${tags.length > 0 ? `\n标签: ${tags.join(' ')}\n` : ''}
     const oldSha = oldFileData.sha;
 
     // 3. 解析原文件获取日期（保持原有日期）
-    const oldContent = atob(oldFileData.content);
+    const oldContent = decodeURIComponent(escape(atob(oldFileData.content.replace(/\n/g, ''))));
     const parsed = this.parseMarkdown(oldContent, recordId);
     const dateStr = parsed.date || new Date().toISOString().split('T')[0];
 
@@ -534,7 +534,7 @@ ${tags.length > 0 ? `\n标签: ${tags.join(' ')}\n` : ''}
     const typePath = this.getPathByType({ type: newType, dueDate: fields["截止日期"] }, dateStr);
     const sanitizedTitle = this.sanitizeFilename(fields["标题"] || parsed.title || '无标题');
     const newFileName = `${sanitizedTitle}_${dateStr}.md`;
-    const newPath = `${basePath}/${typePath}/${newFileName}`.replace(/\/+/g, '/');
+    const newPath = `${basePath}/${typePath}/${newFileName}`.replace(/\/+/g, '/').replace(/^\//, '');
 
     // 5. 构造新的Markdown内容
     const tags = this.extractTags({
@@ -775,8 +775,8 @@ ${tags.length > 0 ? `\n标签: ${tags.join(' ')}\n` : ''}
 
     for (const dir of dirsToSearch) {
       const fullPath = dir
-        ? `${basePath}/${dir}/${recordId}.md`.replace(/\/+/g, '/')
-        : `${basePath}/${recordId}.md`.replace(/\/+/g, '/');
+        ? `${basePath}/${dir}/${recordId}.md`.replace(/\/+/g, '/').replace(/^\//, '')
+        : `${basePath}/${recordId}.md`.replace(/\/+/g, '/').replace(/^\//, '');
 
       try {
         const response = await fetch(
