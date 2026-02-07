@@ -113,7 +113,8 @@ class AiService {
     if (foundUrls && foundUrls.length > 0 && extractUrl) {
       originalUrl = foundUrls[0];
       try {
-        const jinaUrl = `https://r.jina.ai/${encodeURIComponent(originalUrl)}`;
+        // 使用 Vercel 代理避免 CORS 问题
+        const jinaUrl = `/api/jina/${encodeURIComponent(originalUrl)}`;
         const jinaRes = await fetch(jinaUrl, {
           headers: {
             'Accept': 'text/markdown',
