@@ -76,8 +76,7 @@ const AI_PROVIDERS = {
   kimi:      { label: 'Kimi (Moonshot)',     endpoint: 'https://api.moonshot.cn/v1/chat/completions',                             model: 'moonshot-v1-8k' },
   doubao:    { label: '豆包 (火山引擎)',       endpoint: 'https://ark.cn-beijing.volces.com/api/v3/chat/completions',               model: 'ep-你的端点ID' },
   qwen:      { label: '通义千问',             endpoint: 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions',      model: 'qwen-turbo' },
-  gemini:    { label: 'Gemini 2.0 (Free)',   endpoint: 'https://openrouter.ai/api/v1/chat/completions',                          model: 'google/gemini-2.0-flash-thinking-exp:free' },
-  gemini3:   { label: 'Gemini 3.0 Flash',    endpoint: 'https://openrouter.ai/api/v1/chat/completions',                          model: 'google/gemini-flash-1.5' },
+  gemini:    { label: 'Gemini (OpenRouter)',  endpoint: 'https://openrouter.ai/api/v1/chat/completions',                          model: 'google/gemini-2.0-flash-thinking-exp:free', models: ['google/gemini-2.0-flash-thinking-exp:free', 'google/gemini-flash-1.5', 'google/gemini-2.5-pro-preview-03-25', 'google/gemini-2.0-flash-exp'] },
 };
 
 class AiService {
@@ -1253,7 +1252,15 @@ const SettingsScreen = ({ onSave, onCancel, initialConfig, notify, onLogout }) =
                   <option key={key} value={key}>{p.label}</option>
                 ))}
               </select>
-              <input className="bg-slate-950 border border-slate-800 rounded p-2 text-xs outline-none focus:border-indigo-500" placeholder={AI_PROVIDERS[formData.aiProvider]?.model || '模型名称'} value={formData.aiModel} onChange={e => setFormData({...formData, aiModel: e.target.value})} />
+              {AI_PROVIDERS[formData.aiProvider]?.models ? (
+                <select className="bg-slate-950 border border-slate-800 rounded p-2 text-xs outline-none focus:border-indigo-500" value={formData.aiModel} onChange={e => setFormData({...formData, aiModel: e.target.value})}>
+                  {AI_PROVIDERS[formData.aiProvider].models.map((model, idx) => (
+                    <option key={idx} value={model}>{model}</option>
+                  ))}
+                </select>
+              ) : (
+                <input className="bg-slate-950 border border-slate-800 rounded p-2 text-xs outline-none focus:border-indigo-500" placeholder={AI_PROVIDERS[formData.aiProvider]?.model || '模型名称'} value={formData.aiModel} onChange={e => setFormData({...formData, aiModel: e.target.value})} />
+              )}
             </div>
             <div className="text-[10px] text-slate-600 mb-2">端点: {AI_PROVIDERS[formData.aiProvider]?.endpoint || '未知'}</div>
             <div><label className="text-xs font-bold text-slate-500 uppercase mb-1 block">API Key</label><input type="password" className="w-full p-3 bg-slate-950 border border-slate-800 rounded-lg outline-none focus:border-indigo-500 text-slate-200 text-sm" placeholder="sk-..." value={formData.aiKey} onChange={e => setFormData({...formData, aiKey: e.target.value})} /></div>
