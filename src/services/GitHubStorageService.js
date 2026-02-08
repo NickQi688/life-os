@@ -642,26 +642,95 @@ ${tags.length > 0 ? `\n标签: ${tags.join(' ')}\n` : ''}
       return await createResponse.json();
     } else {
       // 7. 路径没变，直接更新文件（需要SHA）
-      const updateResponse = await fetch(`https://api.github.com/repos/${repo}/contents/${newPath}`, {
-        method: 'PUT',
-        headers: {
-          'Authorization': `token ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          message: `Update record via Life-OS: ${fields["标题"] || parsed.title}`,
-          content: contentBase64,
-          branch: branch,
-          sha: oldSha
-        })
-      });
+      // 使用重试机制处理 SHA 不匹配的情况
+      let retries = 0;
+      const maxRetries = 2;
+      let currentSha = oldSha;
 
-      if (!updateResponse.ok) {
+      while (retries <= maxRetries) {
+        const updateResponse = await fetch(`https://api.github.com/repos/${repo}/contents/${newPath}`, {
+          method: 'PUT',
+          headers: {
+            'Authorization': `token ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            message: `Update record via Life-OS: ${fields["标题"] || parsed.title}`,
+            content: contentBase64,
+            branch: branch,
+            sha: currentSha
+          })
+        });
+
+        if (updateResponse.ok) {
+          return await updateResponse.json();
+        }
+
         const error = await updateResponse.json();
+
+        // 如果是 SHA 不匹配错误，重新获取最新 SHA 并重试
+        if (error.message && error.message.includes('does not match') && retries < maxRetries) {
+          console.log('SHA mismatch, retrying with fresh SHA...');
+          retries++;
+
+          // 重新获取最新的文件 SHA
+          const refetchResponse = await fetch(
+            `https://api.github.com/repos/${repo}/contents/${newPath}?ref=${branch}`,
+            {
+              headers: {
+                'Authorization': `token ${token}`,
+                'Accept': 'application/vnd.github.v3+json'
+              }
+            }
+          );
+
+          if (refetchResponse.ok) {
+            const refetchData = await refetchResponse.json();
+            currentSha = refetchData.sha;
+
+            // 重新解析内容，因为可能已被其他方式修改
+            const refetchedContent = decodeURIComponent(escape(atob(refetchData.content.replace(/\n/g, ''))));
+            const reparsed = this.parseMarkdown(refetchedContent, recordId);
+            const latestDateStr = reparsed.date || dateStr;
+
+            // 使用最新的数据重新构造 Markdown
+            const latestTags = this.extractTags({
+              direction: fields["内容方向"] || reparsed.direction,
+              url: fields["URL"] || reparsed.url,
+              type: newType
+            });
+
+            const updatedMarkdown = `---
+title: "${fields["标题"] || reparsed.title || '无标题'}"
+date: ${latestDateStr}
+type: "${newType}"
+source: "${reparsed.source || 'Life-OS'}"
+status: "${this.mapStatus(fields["状态"]) || reparsed.status || 'inbox'}"
+${fields["内容方向"] || reparsed.direction ? `direction: "${fields["内容方向"] || reparsed.direction}"` : ''}
+${fields["URL"] || reparsed.url ? `url: "${fields["URL"] || reparsed.url}"` : ''}
+${fields["截止日期"] ? `dueDate: "${fields["截止日期"]}"` : reparsed.dueDate ? `dueDate: "${reparsed.dueDate}"` : ''}
+${fields["优先级"] ? `priority: "${fields["优先级"]}"` : reparsed.priority ? `priority: "${reparsed.priority}"` : ''}
+${latestTags.length > 0 ? `tags: [${latestTags.map(t => `"${t}"`).join(', ')}]` : ''}
+---
+
+${fields["内容"] !== undefined ? fields["内容"] : reparsed.content || ''}
+
+---
+*Updated by Life-OS at ${new Date().toLocaleString()}*
+${fields["URL"] || reparsed.url ? `\n原文链接: ${fields["URL"] || reparsed.url}\n` : ''}
+${latestTags.length > 0 ? `\n标签: ${latestTags.join(' ')}\n` : ''}
+`;
+            const updatedBase64 = btoa(unescape(encodeURIComponent(updatedMarkdown)));
+
+            // 更新 contentBase64 用于下次请求
+            contentBase64 = updatedBase64;
+            continue; // 重试
+          }
+        }
+
+        // 其他错误或重试次数用完，抛出错误
         throw new Error(`更新失败: ${error.message}`);
       }
-
-      return await updateResponse.json();
     }
   }
 
