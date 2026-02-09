@@ -602,7 +602,7 @@ ${fields["URL"] || parsed.url ? `\n原文链接: ${fields["URL"] || parsed.url}\
 ${tags.length > 0 ? `\n标签: ${tags.join(' ')}\n` : ''}
 `;
 
-    const contentBase64 = btoa(unescape(encodeURIComponent(markdownContent)));
+    let contentBase64 = btoa(unescape(encodeURIComponent(markdownContent)));
 
     // 6. 如果路径变了，需要先删除旧文件，再创建新文件
     if (oldPath !== newPath) {
