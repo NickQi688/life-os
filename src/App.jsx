@@ -1204,6 +1204,7 @@ const SettingsScreen = ({ onSave, onCancel, initialConfig, notify, onLogout }) =
     githubToken: savedGithub.token || '',
     githubRepo: savedGithub.repo || '',
     githubBranch: savedGithub.branch || 'main',
+    githubBasePath: savedGithub.basePath || '',
     aiProvider: savedAi.provider || 'deepseek',
     aiModel: savedAi.model || AI_PROVIDERS[savedAi.provider]?.model || 'deepseek-chat',
     aiKey: savedAi.apiKey || ''
@@ -1215,7 +1216,7 @@ const SettingsScreen = ({ onSave, onCancel, initialConfig, notify, onLogout }) =
   const handleSubmit = async (e) => {
     e.preventDefault();
     aiService.saveConfig({ provider: formData.aiProvider, model: formData.aiModel, apiKey: formData.aiKey });
-    storageService.saveConfig({ token: formData.githubToken, repo: formData.githubRepo, branch: formData.githubBranch, basePath: '' });
+    storageService.saveConfig({ token: formData.githubToken, repo: formData.githubRepo, branch: formData.githubBranch, basePath: formData.githubBasePath });
 
     // 检查是否需要初始化示例数据
     const hasInitialized = localStorage.getItem('lifeos_sample_data_initialized');
@@ -1272,6 +1273,7 @@ const SettingsScreen = ({ onSave, onCancel, initialConfig, notify, onLogout }) =
             <div><label className="text-xs font-bold text-slate-500 uppercase mb-1 block">GitHub Token</label><input required type="password" className="w-full p-3 bg-slate-950 border border-slate-800 rounded-lg outline-none focus:border-indigo-500 text-slate-200 text-sm" placeholder="ghp_..." value={formData.githubToken} onChange={e => setFormData({...formData, githubToken: e.target.value})} /></div>
             <div><label className="text-xs font-bold text-slate-500 uppercase mb-1 block">仓库 (用户名/仓库名)</label><input required type="text" className="w-full p-3 bg-slate-950 border border-slate-800 rounded-lg outline-none focus:border-indigo-500 text-slate-200 text-sm" placeholder="user/repo" value={formData.githubRepo} onChange={e => setFormData({...formData, githubRepo: e.target.value})} /></div>
             <div><label className="text-xs font-bold text-slate-500 uppercase mb-1 block">分支</label><input className="w-full p-3 bg-slate-950 border border-slate-800 rounded-lg outline-none focus:border-indigo-500 text-slate-200 text-sm" value={formData.githubBranch} onChange={e => setFormData({...formData, githubBranch: e.target.value})} /></div>
+            <div><label className="text-xs font-bold text-slate-500 uppercase mb-1 block">存储路径 (basePath)</label><input className="w-full p-3 bg-slate-950 border border-slate-800 rounded-lg outline-none focus:border-indigo-500 text-slate-200 text-sm" placeholder="留空=根目录, lifeos=lifeos子目录" value={formData.githubBasePath} onChange={e => setFormData({...formData, githubBasePath: e.target.value})} /><div className="text-[10px] text-slate-500 mt-1">文件保存位置，如: lifeos 或留空</div></div>
             <button
               type="button"
               onClick={async () => {
@@ -1286,7 +1288,7 @@ const SettingsScreen = ({ onSave, onCancel, initialConfig, notify, onLogout }) =
                     token: formData.githubToken,
                     repo: formData.githubRepo,
                     branch: formData.githubBranch || 'main',
-                    basePath: ''
+                    basePath: formData.githubBasePath
                   });
                   const records = await testService.fetchRecords();
                   notify(`连接成功！找到 ${records.length} 条记录`, 'success');
