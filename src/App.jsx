@@ -10,7 +10,7 @@ import {
   HelpCircle, AlertTriangle, Lock, RefreshCw, Eye, ChevronDown, ChevronUp,
   User, Mail, MessageCircle, Globe, Loader2, Info, AlertCircle, Check, FileText, 
   Dices, Sliders, Book, PenTool, Hash, Layout, Search, Command, Flame, BookOpen,
-  Edit3, MoreVertical, XCircle, ExternalLink, Sparkles, Wand2, Timer, Rocket, Download, BarChart3
+  Edit3, MoreVertical, XCircle, ExternalLink, Sparkles, Wand2, Timer, Rocket, Download, BarChart3, Newspaper
 } from 'lucide-react';
 import { useDebouncedValue, useKeyboard } from './utils/hooks.js';
 import ErrorBoundary from './components/ErrorBoundary.jsx';
@@ -34,6 +34,10 @@ const PRIORITY = { HIGH: "紧急", NORMAL: "普通", LOW: "不急" };
 
 // 全局统一的内容方向配置
 const CONTENT_DIRECTIONS = ["AI", "提效工具", "个人成长", "投资", "新媒体", "创业", "工作", "金句", "生活", "学习", "其他"];
+
+// Hotfeed (static JSON) configuration
+// This is just a suggested default; actual enablement is controlled by localStorage.
+const DEFAULT_HOTFEED_BASE = 'https://life-os-hotfeed.vercel.app';
 
 /**
  * --- UTILS ---
@@ -596,6 +600,192 @@ const KanbanCard = ({ item, onMove, onClick }) => (
   </div>
 );
 
+// --- Hotfeed UI ---
+const HOTFEED_CATEGORIES = [
+  { key: 'ai', label: 'AI', accent: 'text-indigo-300', badge: 'bg-indigo-500/10 border-indigo-500/20 text-indigo-300' },
+  { key: 'crypto', label: '币圈', accent: 'text-emerald-300', badge: 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300' },
+  { key: 'binance', label: '币安', accent: 'text-amber-300', badge: 'bg-amber-500/10 border-amber-500/20 text-amber-300' },
+];
+
+const HotfeedView = ({ notify }) => {
+  const [category, setCategory] = useState('ai');
+  const [frequency, setFrequency] = useState('4h');
+  const [feed, setFeed] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [selected, setSelected] = useState(null);
+
+  const base = (localStorage.getItem('lifeos_hotfeed_base') || DEFAULT_HOTFEED_BASE).replace(/\/+$/, '');
+
+  const url = `${base}/${category}/${frequency}.json`;
+
+  const load = async ({ silent = false } = {}) => {
+    if (!base) return;
+    if (!silent) setIsLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(url, { cache: 'no-store' });
+      if (!res.ok) throw new Error(`加载失败: ${res.status}`);
+      const data = await res.json();
+      setFeed(data);
+      if (selected) {
+        // keep selection best-effort
+        const next = (data.items || []).find((it) => it.url && selected.url && it.url === selected.url);
+        setSelected(next || null);
+      }
+    } catch (e) {
+      setError(e.message || String(e));
+    } finally {
+      if (!silent) setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    setSelected(null);
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [category, frequency, url]);
+
+  useEffect(() => {
+    if (!base) return;
+    const id = setInterval(() => load({ silent: true }), 5 * 60 * 1000);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [category, frequency, url]);
+
+  if (!base) {
+    return (
+      <div className="max-w-3xl mx-auto">
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6">
+          <div className="flex items-center gap-2 text-slate-200 font-bold"><Newspaper size={16}/> 热点资讯</div>
+          <div className="text-sm text-slate-500 mt-2">去“设置”里填写 Hotfeed Base URL 后即可使用。</div>
+        </div>
+      </div>
+    );
+  }
+
+  const cat = HOTFEED_CATEGORIES.find((c) => c.key === category) || HOTFEED_CATEGORIES[0];
+  const items = feed?.items || [];
+  const generatedAt = feed?.generatedAt ? new Date(feed.generatedAt) : null;
+
+  return (
+    <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-5 gap-6">
+      <div className="lg:col-span-2 space-y-4">
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <div className={`text-xs px-2 py-1 rounded-lg border ${cat.badge}`}>{cat.label}</div>
+                <div className="text-xs text-slate-500">{frequency === '4h' ? '4 小时' : '每日'}</div>
+              </div>
+              <div className="mt-2 text-lg font-extrabold text-white">热点咨询</div>
+              <div className="text-xs text-slate-500 mt-1 break-all">{url}</div>
+            </div>
+            <button
+              onClick={() => { load(); notify?.('已刷新', 'success'); }}
+              className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200"
+              title="刷新"
+              disabled={isLoading}
+            >
+              {isLoading ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
+            </button>
+          </div>
+
+          <div className="flex gap-2 mt-4">
+            {HOTFEED_CATEGORIES.map((c) => (
+              <button
+                key={c.key}
+                onClick={() => setCategory(c.key)}
+                className={`flex-1 py-2 rounded-xl text-xs font-bold border transition-colors ${category === c.key ? 'bg-slate-800 border-slate-600 text-white' : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'}`}
+              >
+                {c.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex gap-2 mt-2">
+            {['4h', 'daily'].map((f) => (
+              <button
+                key={f}
+                onClick={() => setFrequency(f)}
+                className={`flex-1 py-2 rounded-xl text-xs font-bold border transition-colors ${frequency === f ? 'bg-indigo-600/20 border-indigo-500/40 text-indigo-200' : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'}`}
+              >
+                {f === '4h' ? '4H' : 'Daily'}
+              </button>
+            ))}
+          </div>
+
+          <div className="mt-4 text-xs text-slate-500 flex items-center justify-between">
+            <div>{generatedAt ? `更新: ${generatedAt.toLocaleString()}` : '未更新'}</div>
+            <div>{items.length} 条</div>
+          </div>
+        </div>
+
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-2">
+          {error && <div className="p-4 text-sm text-red-300">{error}</div>}
+          {!error && items.length === 0 && (
+            <div className="p-6 text-sm text-slate-500">暂无数据（先跑一次 GitHub Actions 生成）</div>
+          )}
+          <div className="max-h-[70vh] overflow-y-auto custom-scrollbar">
+            {items.map((it, idx) => (
+              <button
+                key={(it.url || '') + idx}
+                onClick={() => setSelected(it)}
+                className={`w-full text-left p-4 rounded-xl border transition-colors mb-2 ${selected?.url && it.url && selected.url === it.url ? 'bg-slate-800 border-slate-600' : 'bg-slate-950 border-slate-900 hover:border-slate-800'}`}
+              >
+                <div className="text-sm font-bold text-slate-200 line-clamp-2">{it.title || '(untitled)'}</div>
+                {it.summary && <div className="text-xs text-slate-500 mt-1 line-clamp-2">{it.summary}</div>}
+                {it.url && <div className="text-[10px] text-slate-600 mt-2 line-clamp-1">{it.url}</div>}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="lg:col-span-3">
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 min-h-[70vh]">
+          {!selected ? (
+            <div className="text-slate-500 text-sm">从左侧选择一条热点查看详情。</div>
+          ) : (
+            <div className="space-y-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className={`text-xs font-bold ${cat.accent}`}>{cat.label}</div>
+                  <div className="text-2xl font-extrabold text-white mt-1 leading-snug">{selected.title || '(untitled)'}</div>
+                </div>
+                {selected.url && (
+                  <a
+                    href={selected.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-sm"
+                  >
+                    <ExternalLink size={16} /> 打开原文
+                  </a>
+                )}
+              </div>
+
+              {selected.summary && (
+                <div className="bg-slate-950 border border-slate-800 rounded-2xl p-5">
+                  <div className="text-xs font-bold text-slate-400 mb-2">摘要</div>
+                  <div className="text-sm text-slate-200 whitespace-pre-wrap leading-relaxed">{selected.summary}</div>
+                </div>
+              )}
+
+              {selected.content && (
+                <div className="bg-slate-950 border border-slate-800 rounded-2xl p-5">
+                  <div className="text-xs font-bold text-slate-400 mb-2">详情</div>
+                  <div className="text-sm text-slate-300 whitespace-pre-wrap leading-relaxed">{selected.content}</div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 /**
  * --- MAIN SCREENS ---
  */
@@ -612,7 +802,14 @@ const WelcomeScreen = ({ onStart, onGuide }) => (
 
 const SettingsScreen = ({ onSave, onCancel, initialConfig, notify, onLogout }) => {
   const { resetOnboarding } = useOnboarding();
-  const [formData, setFormData] = useState({ appId: initialConfig?.appId || '', appSecret: initialConfig?.appSecret || '', appToken: initialConfig?.appToken || '', tableId: initialConfig?.tableId || '', deepseekKey: initialConfig?.deepseekKey || '' });
+  const [formData, setFormData] = useState({
+    appId: initialConfig?.appId || '',
+    appSecret: initialConfig?.appSecret || '',
+    appToken: initialConfig?.appToken || '',
+    tableId: initialConfig?.tableId || '',
+    deepseekKey: initialConfig?.deepseekKey || '',
+    hotfeedBase: localStorage.getItem('lifeos_hotfeed_base') || DEFAULT_HOTFEED_BASE,
+  });
   
   // PWA Install State
   const [deferredPrompt, setDeferredPrompt] = useState(null);
@@ -647,7 +844,15 @@ const SettingsScreen = ({ onSave, onCancel, initialConfig, notify, onLogout }) =
     }
   };
 
-  const handleSubmit = (e) => { e.preventDefault(); onSave(formData); };
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (formData.hotfeedBase && formData.hotfeedBase.trim()) {
+      localStorage.setItem('lifeos_hotfeed_base', formData.hotfeedBase.trim().replace(/\/+$/, ''));
+    } else {
+      localStorage.removeItem('lifeos_hotfeed_base');
+    }
+    onSave(formData);
+  };
   const TEMPLATE_URL = "https://ai.feishu.cn/base/CJQBbksPWaMfzlsatFPcFKWAnLd?from=from_copylink";
 
   return (
@@ -660,6 +865,7 @@ const SettingsScreen = ({ onSave, onCancel, initialConfig, notify, onLogout }) =
             <div><label className="text-xs font-bold text-slate-500 uppercase mb-1 block">DeepSeek API Key</label><input type="password" className="w-full p-3 bg-slate-950 border border-slate-800 rounded-lg outline-none focus:border-indigo-500 text-slate-200" placeholder="sk-..." value={formData.deepseekKey} onChange={e => setFormData({...formData, deepseekKey: e.target.value})} /></div>
             <p className="text-[10px] text-slate-500 mt-2">不填则不启用 AI 功能。Key 仅保存在本地。</p>
           </div>
+
           <div className="grid grid-cols-2 gap-4">
             <div><label className="text-xs font-bold text-slate-500 uppercase mb-1 block">App ID</label><div className="flex gap-2"><input required type="text" className="w-full p-3 bg-slate-950 border border-slate-800 rounded-lg outline-none focus:border-indigo-500 text-slate-200" placeholder="cli_..." value={formData.appId} onChange={e => setFormData({...formData, appId: e.target.value})} /><a href={TUTORIAL_URL} target="_blank" rel="noopener noreferrer" className="p-3 bg-slate-800 rounded-lg hover:bg-slate-700 text-slate-400" title="配置教程"><Book size={18}/></a></div></div>
             <div><label className="text-xs font-bold text-slate-500 uppercase mb-1 block">App Secret</label><input required type="password" className="w-full p-3 bg-slate-950 border border-slate-800 rounded-lg outline-none focus:border-indigo-500 text-slate-200" placeholder="******" value={formData.appSecret} onChange={e => setFormData({...formData, appSecret: e.target.value})} /></div>
@@ -998,6 +1204,8 @@ const DesktopView = ({ onLogout, onSettings, notify, isDemoMode, onGoHome, direc
   const debouncedSearchText = useDebouncedValue(searchText, 300); // 搜索防抖
   const [editingItem, setEditingItem] = useState(null);
 
+  const hasHotfeed = !!(localStorage.getItem('lifeos_hotfeed_base') || DEFAULT_HOTFEED_BASE);
+
   // Inputs
   const [quickInput, setQuickInput] = useState("");
   const [isQuickAdding, setIsQuickAdding] = useState(false);
@@ -1073,6 +1281,7 @@ const DesktopView = ({ onLogout, onSettings, notify, isDemoMode, onGoHome, direc
     'g,i': () => setActiveTab('inbox'),
     'g,p': () => setActiveTab('planner'),
     'g,s': () => setActiveTab('stats'),
+    ...(hasHotfeed ? { 'g,h': () => setActiveTab('hotfeed') } : {}),
     '?': () => {
       const shortcuts = `
 ⌨️ 键盘快捷键
@@ -1087,6 +1296,7 @@ const DesktopView = ({ onLogout, onSettings, notify, isDemoMode, onGoHome, direc
   G + I     - 前往收件箱
   G + P     - 前往计划看板
   G + S     - 前往数据统计
+  ${hasHotfeed ? 'G + H     - 前往热点资讯\n' : ''}
 
 💡 提示：按 G 然后快速按第二个字母
       `;
@@ -1264,6 +1474,12 @@ const DesktopView = ({ onLogout, onSettings, notify, isDemoMode, onGoHome, direc
           <NavItem icon={LayoutDashboard} label="仪表盘" active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} />
           <div><div className="px-3 mb-2 text-[10px] font-bold uppercase text-slate-600 tracking-wider">Capture</div><NavItem icon={Inbox} label="收件箱" count={inboxItems.length} active={activeTab === 'inbox'} onClick={() => setActiveTab('inbox')} dataOnboarding="nav-inbox" /></div>
           <div><div className="px-3 mb-2 text-[10px] font-bold uppercase text-slate-600 tracking-wider">Organize</div><NavItem icon={Layout} label="计划看板" active={activeTab === 'planner'} onClick={() => setActiveTab('planner')} dataOnboarding="nav-planner" /><NavItem icon={BookOpen} label="知识库" active={activeTab === 'knowledge'} onClick={() => setActiveTab('knowledge')} dataOnboarding="nav-knowledge" /><NavItem icon={PenTool} label="日记" active={activeTab === 'journal'} onClick={() => setActiveTab('journal')} /></div>
+          {hasHotfeed && (
+            <div>
+              <div className="px-3 mb-2 text-[10px] font-bold uppercase text-slate-600 tracking-wider">Explore</div>
+              <NavItem icon={Newspaper} label="热点资讯" active={activeTab === 'hotfeed'} onClick={() => setActiveTab('hotfeed')} />
+            </div>
+          )}
           <div><div className="px-3 mb-2 text-[10px] font-bold uppercase text-slate-600 tracking-wider">Analytics</div><NavItem icon={BarChart3} label="数据统计" active={activeTab === 'stats'} onClick={() => setActiveTab('stats')} dataOnboarding="nav-stats" /></div>
         </div>
         <div className="p-4 border-t border-slate-800 flex items-center justify-between">
@@ -1280,6 +1496,7 @@ const DesktopView = ({ onLogout, onSettings, notify, isDemoMode, onGoHome, direc
             {activeTab === 'planner' && <><Layout size={20} className="text-purple-400"/> 个人计划</>}
             {activeTab === 'knowledge' && <><BookOpen size={20} className="text-emerald-400"/> 知识库</>}
             {activeTab === 'journal' && <><PenTool size={20} className="text-amber-400"/> 每日记录</>}
+            {activeTab === 'hotfeed' && <><Newspaper size={20} className="text-slate-300"/> 热点资讯</>}
             {activeTab === 'stats' && <><BarChart3 size={20} className="text-cyan-400"/> 数据统计</>}
           </h2>
           <div className="flex items-center gap-4 text-xs text-slate-500">
@@ -1464,6 +1681,11 @@ const DesktopView = ({ onLogout, onSettings, notify, isDemoMode, onGoHome, direc
                 </div>
               ))}
             </div>
+          )}
+
+          {/* VIEW: HOTFEED */}
+          {activeTab === 'hotfeed' && (
+            <HotfeedView notify={notify} />
           )}
 
           {/* VIEW: STATS */}
