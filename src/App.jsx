@@ -667,6 +667,7 @@ const HotfeedView = ({ notify }) => {
   const cat = HOTFEED_CATEGORIES.find((c) => c.key === category) || HOTFEED_CATEGORIES[0];
   const items = feed?.items || [];
   const generatedAt = feed?.generatedAt ? new Date(feed.generatedAt) : null;
+  const grokSummary = feed?.summary || null;
 
   return (
     <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-5 gap-6">
@@ -678,7 +679,7 @@ const HotfeedView = ({ notify }) => {
                 <div className={`text-xs px-2 py-1 rounded-lg border ${cat.badge}`}>{cat.label}</div>
                 <div className="text-xs text-slate-500">{frequency === '4h' ? '4 小时' : '每日'}</div>
               </div>
-              <div className="mt-2 text-lg font-extrabold text-white">热点咨询</div>
+              <div className="mt-2 text-lg font-extrabold text-white">热点资讯</div>
               <div className="text-xs text-slate-500 mt-1 break-all">{url}</div>
             </div>
             <button
@@ -745,7 +746,16 @@ const HotfeedView = ({ notify }) => {
       <div className="lg:col-span-3">
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 min-h-[70vh]">
           {!selected ? (
-            <div className="text-slate-500 text-sm">从左侧选择一条热点查看详情。</div>
+            <div className="space-y-4">
+              {grokSummary ? (
+                <div className="bg-slate-950 border border-slate-800 rounded-2xl p-5">
+                  <div className="text-xs font-bold text-indigo-400 mb-2">📝 AI 精选摘要</div>
+                  <div className="text-sm text-slate-200 whitespace-pre-wrap leading-relaxed">{grokSummary}</div>
+                </div>
+              ) : (
+                <div className="text-slate-500 text-sm">从左侧选择一条热点查看详情，或点击上方查看 AI 精选摘要。</div>
+              )}
+            </div>
           ) : (
             <div className="space-y-4">
               <div className="flex items-start justify-between gap-3">
@@ -1206,6 +1216,21 @@ const DesktopView = ({ onLogout, onSettings, notify, isDemoMode, onGoHome, direc
 
   const hasHotfeed = !!(localStorage.getItem('lifeos_hotfeed_base') || DEFAULT_HOTFEED_BASE);
 
+  // Hotfeed dashboard widget data
+  const [hotfeedSummary, setHotfeedSummary] = useState(null);
+  const [hotfeedLoading, setHotfeedLoading] = useState(false);
+
+  useEffect(() => {
+    if (!hasHotfeed) return;
+    const base = localStorage.getItem('lifeos_hotfeed_base') || DEFAULT_HOTFEED_BASE;
+    Promise.all([
+      fetch(`${base.replace(/\/+$/, '')}/crypto/4h.json`, { cache: 'no-store' }).then(r => r.json()).catch(() => null),
+      fetch(`${base.replace(/\/+$/, '')}/ai/4h.json`, { cache: 'no-store' }).then(r => r.json()).catch(() => null),
+    ]).then(([crypto, ai]) => {
+      setHotfeedSummary({ crypto, ai });
+    });
+  }, [hasHotfeed]);
+
   // Inputs
   const [quickInput, setQuickInput] = useState("");
   const [isQuickAdding, setIsQuickAdding] = useState(false);
@@ -1583,10 +1608,36 @@ const DesktopView = ({ onLogout, onSettings, notify, isDemoMode, onGoHome, direc
                             <span className="text-xs text-slate-600">{new Date(item.fields["记录日期"]).toLocaleDateString()}</span>
                          </div>
                       ))}
-                      {recentActivities.length === 0 && <div className="text-slate-600 text-sm text-center py-4">暂无新记录</div>}
+                       {recentActivities.length === 0 && <div className="text-slate-600 text-sm text-center py-4">暂无新记录</div>}
+                    </div>
+                 </div>
+
+                 {hasHotfeed && hotfeedSummary && (
+                   <div className="md:col-span-2 bg-slate-900 border border-slate-800 p-6 rounded-3xl">
+                     <div className="flex items-center justify-between mb-4">
+                       <div className="flex items-center gap-2 text-slate-400 text-sm font-bold uppercase tracking-wider"><Newspaper size={14}/> 最新资讯</div>
+                       <button onClick={() => setActiveTab('hotfeed')} className="text-xs text-indigo-400 hover:text-indigo-300">查看全部 →</button>
+                     </div>
+                     <div className="space-y-4">
+                       {hotfeedSummary.crypto?.summary && (
+                         <div className="p-3 bg-emerald-500/5 border border-emerald-500/20 rounded-xl">
+                           <div className="text-xs font-bold text-emerald-400 mb-1">💰 币圈 4h</div>
+                           <div className="text-xs text-slate-400 line-clamp-3">{hotfeedSummary.crypto.summary.substring(0, 200)}...</div>
+                         </div>
+                       )}
+                       {hotfeedSummary.ai?.summary && (
+                         <div className="p-3 bg-indigo-500/5 border border-indigo-500/20 rounded-xl">
+                           <div className="text-xs font-bold text-indigo-400 mb-1">🤖 AI 4h</div>
+                           <div className="text-xs text-slate-400 line-clamp-3">{hotfeedSummary.ai.summary.substring(0, 200)}...</div>
+                         </div>
+                       )}
+                       {!hotfeedSummary.crypto?.summary && !hotfeedSummary.ai?.summary && (
+                         <div className="text-slate-600 text-sm">暂无资讯</div>
+                       )}
+                     </div>
                    </div>
-                </div>
-             </div>
+                 )}
+              </div>
           )}
 
           {/* VIEW: INBOX */}
