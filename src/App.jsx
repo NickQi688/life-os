@@ -666,132 +666,101 @@ const HotfeedView = ({ notify }) => {
 
   const cat = HOTFEED_CATEGORIES.find((c) => c.key === category) || HOTFEED_CATEGORIES[0];
   const items = feed?.items || [];
+  const sections = feed?.sections || [];
   const generatedAt = feed?.generatedAt ? new Date(feed.generatedAt) : null;
-  const grokSummary = feed?.summary || null;
 
   return (
-    <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-5 gap-6">
-      <div className="lg:col-span-2 space-y-4">
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <div className="flex items-center gap-2">
-                <div className={`text-xs px-2 py-1 rounded-lg border ${cat.badge}`}>{cat.label}</div>
-                <div className="text-xs text-slate-500">{frequency === '4h' ? '4 小时' : '每日'}</div>
-              </div>
-              <div className="mt-2 text-lg font-extrabold text-white">热点资讯</div>
-              <div className="text-xs text-slate-500 mt-1 break-all">{url}</div>
+    <div className="max-w-6xl mx-auto">
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 mb-6">
+        <div className="flex items-center justify-between gap-4 flex-wrap">
+          <div className="flex items-center gap-3">
+            <div className={`text-xs px-3 py-1.5 rounded-lg border ${cat.badge}`}>{cat.label}</div>
+            <div className="text-sm text-slate-400">
+              {frequency === '4h' ? '每4小时更新' : '每日更新'}
             </div>
+            <div className="text-xs text-slate-500">
+              {generatedAt ? `${generatedAt.toLocaleString('zh-CN')} 更新` : ''}
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
             <button
               onClick={() => { load(); notify?.('已刷新', 'success'); }}
-              className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200"
+              className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200"
               title="刷新"
               disabled={isLoading}
             >
               {isLoading ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
             </button>
           </div>
-
-          <div className="flex gap-2 mt-4">
-            {HOTFEED_CATEGORIES.map((c) => (
-              <button
-                key={c.key}
-                onClick={() => setCategory(c.key)}
-                className={`flex-1 py-2 rounded-xl text-xs font-bold border transition-colors ${category === c.key ? 'bg-slate-800 border-slate-600 text-white' : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'}`}
-              >
-                {c.label}
-              </button>
-            ))}
-          </div>
-
-          <div className="flex gap-2 mt-2">
-            {['4h', 'daily'].map((f) => (
-              <button
-                key={f}
-                onClick={() => setFrequency(f)}
-                className={`flex-1 py-2 rounded-xl text-xs font-bold border transition-colors ${frequency === f ? 'bg-indigo-600/20 border-indigo-500/40 text-indigo-200' : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'}`}
-              >
-                {f === '4h' ? '4H' : 'Daily'}
-              </button>
-            ))}
-          </div>
-
-          <div className="mt-4 text-xs text-slate-500 flex items-center justify-between">
-            <div>{generatedAt ? `更新: ${generatedAt.toLocaleString()}` : '未更新'}</div>
-            <div>{items.length} 条</div>
-          </div>
-        </div>
-
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-2">
-          {error && <div className="p-4 text-sm text-red-300">{error}</div>}
-          {!error && items.length === 0 && (
-            <div className="p-6 text-sm text-slate-500">暂无数据（先跑一次 GitHub Actions 生成）</div>
-          )}
-          <div className="max-h-[70vh] overflow-y-auto custom-scrollbar">
-            {items.map((it, idx) => (
-              <button
-                key={(it.url || '') + idx}
-                onClick={() => setSelected(it)}
-                className={`w-full text-left p-4 rounded-xl border transition-colors mb-2 ${selected?.url && it.url && selected.url === it.url ? 'bg-slate-800 border-slate-600' : 'bg-slate-950 border-slate-900 hover:border-slate-800'}`}
-              >
-                <div className="text-sm font-bold text-slate-200 line-clamp-2">{it.title || '(untitled)'}</div>
-                {it.summary && <div className="text-xs text-slate-500 mt-1 line-clamp-2">{it.summary}</div>}
-                {it.url && <div className="text-[10px] text-slate-600 mt-2 line-clamp-1">{it.url}</div>}
-              </button>
-            ))}
-          </div>
         </div>
       </div>
 
-      <div className="lg:col-span-3">
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 min-h-[70vh]">
-          {!selected ? (
-            <div className="space-y-4">
-              {grokSummary ? (
-                <div className="bg-slate-950 border border-slate-800 rounded-2xl p-5">
-                  <div className="text-xs font-bold text-indigo-400 mb-2">📝 AI 精选摘要</div>
-                  <div className="text-sm text-slate-200 whitespace-pre-wrap leading-relaxed">{grokSummary}</div>
+      {error && (
+        <div className="bg-red-900/20 border border-red-800 rounded-2xl p-4 mb-6 text-red-300">
+          {error}
+        </div>
+      )}
+
+      {sections.length === 0 && !error && (
+        <div className="text-center py-12 text-slate-500">
+          暂无数据，请运行 GitHub Actions 生成资讯
+        </div>
+      )}
+
+      {sections.map((section) => (
+        <div key={section.title} className="mb-8">
+          <div className="flex items-center gap-2 mb-4">
+            <h2 className="text-lg font-bold text-white">{section.title}</h2>
+            <span className="text-xs text-slate-500">({section.items.length}条)</span>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {section.items.map((it) => (
+              <a
+                key={it.id || it.url || Math.random()}
+                href={it.url || undefined}
+                target={it.url ? '_blank' : undefined}
+                rel={it.url ? 'noopener noreferrer' : undefined}
+                className={`block p-5 rounded-2xl border transition-all hover:scale-[1.02] ${
+                  it.score && it.score >= 80 
+                    ? 'bg-gradient-to-br from-emerald-950/30 to-slate-900 border-emerald-800/30 hover:border-emerald-600/50' 
+                    : 'bg-slate-900 border-slate-800 hover:border-slate-600'
+                }`}
+              >
+                <div className="flex items-start justify-between gap-2 mb-2">
+                  <div className="font-bold text-slate-200 line-clamp-2 flex-1">
+                    {it.title || '(无标题)'}
+                  </div>
+                  {it.score && (
+                    <span className={`text-xs px-2 py-0.5 rounded font-bold ${
+                      it.score >= 80 ? 'bg-emerald-600 text-white' : 'bg-slate-700 text-slate-300'
+                    }`}>
+                      {it.score}
+                    </span>
+                  )}
                 </div>
-              ) : (
-                <div className="text-slate-500 text-sm">从左侧选择一条热点查看详情，或点击上方查看 AI 精选摘要。</div>
-              )}
-            </div>
-          ) : (
-            <div className="space-y-4">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <div className={`text-xs font-bold ${cat.accent}`}>{cat.label}</div>
-                  <div className="text-2xl font-extrabold text-white mt-1 leading-snug">{selected.title || '(untitled)'}</div>
-                </div>
-                {selected.url && (
-                  <a
-                    href={selected.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-sm"
-                  >
-                    <ExternalLink size={16} /> 打开原文
-                  </a>
+                {it.summary && (
+                  <div className="text-sm text-slate-400 line-clamp-3 mb-3">
+                    {it.summary}
+                  </div>
                 )}
-              </div>
-
-              {selected.summary && (
-                <div className="bg-slate-950 border border-slate-800 rounded-2xl p-5">
-                  <div className="text-xs font-bold text-slate-400 mb-2">摘要</div>
-                  <div className="text-sm text-slate-200 whitespace-pre-wrap leading-relaxed">{selected.summary}</div>
+                <div className="flex items-center gap-3 text-xs text-slate-500">
+                  {it.source && <span className="text-indigo-400">{it.source}</span>}
+                  {it.publishedAt && (
+                    <span>
+                      {new Date(it.publishedAt).toLocaleString('zh-CN', { 
+                        month: 'numeric', 
+                        day: 'numeric', 
+                        hour: '2-digit', 
+                        minute: '2-digit' 
+                      })}
+                    </span>
+                  )}
                 </div>
-              )}
-
-              {selected.content && (
-                <div className="bg-slate-950 border border-slate-800 rounded-2xl p-5">
-                  <div className="text-xs font-bold text-slate-400 mb-2">详情</div>
-                  <div className="text-sm text-slate-300 whitespace-pre-wrap leading-relaxed">{selected.content}</div>
-                </div>
-              )}
-            </div>
-          )}
+              </a>
+            ))}
+          </div>
         </div>
-      </div>
+      ))}
     </div>
   );
 };
