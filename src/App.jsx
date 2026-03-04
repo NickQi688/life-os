@@ -608,15 +608,14 @@ const HOTFEED_CATEGORIES = [
 ];
 
 const HotfeedView = ({ notify }) => {
-  const [category, setCategory] = useState('ai');
+  const [category, setCategory] = useState('crypto');
   const [frequency, setFrequency] = useState('4h');
   const [feed, setFeed] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [selected, setSelected] = useState(null);
+  const [selectedItem, setSelectedItem] = useState(null);
 
   const base = (localStorage.getItem('lifeos_hotfeed_base') || DEFAULT_HOTFEED_BASE).replace(/\/+$/, '');
-
   const url = `${base}/${category}/${frequency}.json`;
 
   const load = async ({ silent = false } = {}) => {
@@ -628,10 +627,9 @@ const HotfeedView = ({ notify }) => {
       if (!res.ok) throw new Error(`加载失败: ${res.status}`);
       const data = await res.json();
       setFeed(data);
-      if (selected) {
-        // keep selection best-effort
-        const next = (data.items || []).find((it) => it.url && selected.url && it.url === selected.url);
-        setSelected(next || null);
+      if (selectedItem) {
+        const next = (data.sections || []).flatMap(s => s.items || []).find(it => it.url && selectedItem.url && it.url === selectedItem.url);
+        setSelectedItem(next || null);
       }
     } catch (e) {
       setError(e.message || String(e));
@@ -641,133 +639,215 @@ const HotfeedView = ({ notify }) => {
   };
 
   useEffect(() => {
-    setSelected(null);
+    setSelectedItem(null);
     load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [category, frequency, url]);
 
   useEffect(() => {
     if (!base) return;
     const id = setInterval(() => load({ silent: true }), 5 * 60 * 1000);
     return () => clearInterval(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [category, frequency, url]);
 
   if (!base) {
     return (
       <div className="max-w-3xl mx-auto">
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6">
+        <div className="bg-[#1a1a1a] border border-[#282828] rounded-2xl p-6">
           <div className="flex items-center gap-2 text-slate-200 font-bold"><Newspaper size={16}/> 热点资讯</div>
-          <div className="text-sm text-slate-500 mt-2">去“设置”里填写 Hotfeed Base URL 后即可使用。</div>
+          <div className="text-sm text-slate-500 mt-2">去"设置"里填写 Hotfeed Base URL 后即可使用。</div>
         </div>
       </div>
     );
   }
 
-  const cat = HOTFEED_CATEGORIES.find((c) => c.key === category) || HOTFEED_CATEGORIES[0];
-  const items = feed?.items || [];
   const sections = feed?.sections || [];
+  const allItems = feed?.items || [];
   const generatedAt = feed?.generatedAt ? new Date(feed.generatedAt) : null;
+  const cat = HOTFEED_CATEGORIES.find((c) => c.key === category) || HOTFEED_CATEGORIES[0];
+
+  const formatTime = (dateStr) => {
+    if (!dateStr) return '';
+    return new Date(dateStr).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false });
+  };
+
+  const extractExcerpt = (content) => {
+    if (!content) return '';
+    const lines = content.split('\n').filter(l => l.trim());
+    for (const line of lines) {
+      const clean = line.replace(/^[#•\-\*]\s*/, '').replace(/\*\*/g, '').trim();
+      if (clean.length > 30) return clean.length > 120 ? clean.slice(0, 120) + '…' : clean;
+    }
+    return '';
+  };
 
   return (
-    <div className="max-w-6xl mx-auto">
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 mb-6">
-        <div className="flex items-center justify-between gap-4 flex-wrap">
-          <div className="flex items-center gap-3">
-            <div className={`text-xs px-3 py-1.5 rounded-lg border ${cat.badge}`}>{cat.label}</div>
-            <div className="text-sm text-slate-400">
-              {frequency === '4h' ? '每4小时更新' : '每日更新'}
-            </div>
-            <div className="text-xs text-slate-500">
-              {generatedAt ? `${generatedAt.toLocaleString('zh-CN')} 更新` : ''}
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => { load(); notify?.('已刷新', 'success'); }}
-              className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200"
-              title="刷新"
-              disabled={isLoading}
-            >
-              {isLoading ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
-            </button>
-          </div>
+    <div className="max-w-[900px] mx-auto px-5 py-5">
+      <div className="flex items-center justify-between mb-5">
+        <div className="flex items-center gap-3">
+          <h1 className="text-xl font-bold text-white">☀️ 热点资讯</h1>
+          <span className="text-xs text-slate-500">Powered by 6551 + Grok</span>
         </div>
+        <button
+          onClick={() => { load(); notify?.('已刷新', 'success'); }}
+          className="px-3 py-1.5 rounded-lg text-xs font-medium bg-[#2a2a2a] hover:bg-[#3a3a3a] border border-[#444] text-[#aaa] transition-colors"
+          disabled={isLoading}
+        >
+          {isLoading ? '加载中...' : '刷新'}
+        </button>
+      </div>
+
+      <div className="flex gap-2 mb-5 flex-wrap">
+        {HOTFEED_CATEGORIES.map((c) => (
+          <button
+            key={c.key}
+            onClick={() => setCategory(c.key)}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+              category === c.key 
+                ? 'bg-[#2a2a2a] border-[#666] text-white' 
+                : 'bg-[#1a1a1a] border-[#333] text-[#aaa] hover:border-[#555]'
+            }`}
+          >
+            {c.label}
+          </button>
+        ))}
+        <div className="w-px bg-[#333] mx-1"></div>
+        {['4h', 'daily'].map((f) => (
+          <button
+            key={f}
+            onClick={() => setFrequency(f)}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+              frequency === f 
+                ? 'bg-[#2a2a2a] border-[#666] text-white' 
+                : 'bg-[#1a1a1a] border-[#333] text-[#aaa] hover:border-[#555]'
+            }`}
+          >
+            {f === '4h' ? '4小时' : '每日'}
+          </button>
+        ))}
       </div>
 
       {error && (
-        <div className="bg-red-900/20 border border-red-800 rounded-2xl p-4 mb-6 text-red-300">
+        <div className="bg-red-900/20 border border-red-800 rounded-xl p-4 text-red-300 text-sm mb-5">
           {error}
         </div>
       )}
 
-      {sections.length === 0 && !error && (
-        <div className="text-center py-12 text-slate-500">
+      {sections.length === 0 && !error && !isLoading && (
+        <div className="text-center py-16 text-[#555] text-sm">
           暂无数据，请运行 GitHub Actions 生成资讯
         </div>
       )}
 
-      {sections.map((section) => (
-        <div key={section.title} className="mb-8">
-          <div className="flex items-center gap-2 mb-4">
-            <h2 className="text-lg font-bold text-white">{section.title}</h2>
-            <span className="text-xs text-slate-500">({section.items.length}条)</span>
+      <div className="flex flex-col gap-3">
+        {sections.map((section) => (
+          <div key={section.title}>
+            <div className="text-xs font-medium text-[#666] mb-2 pb-2 border-b border-[#1e1e1e]">
+              {section.title} <span className="text-[#444]">({section.items.length}条)</span>
+            </div>
+            <div className="flex flex-col gap-2">
+              {section.items.map((it) => (
+                <button
+                  key={it.id || it.url || Math.random()}
+                  onClick={() => setSelectedItem(it)}
+                  className={`text-left p-3 rounded-xl border transition-colors ${
+                    selectedItem?.url === it.url 
+                      ? 'bg-[#1e1e1e] border-[#444]' 
+                      : 'bg-[#1a1a1a] border-[#282828] hover:border-[#444]'
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium text-[#e0e0e0] truncate">{it.title || '(无标题)'}</div>
+                      {it.summary && (
+                        <div className="text-xs text-[#666] mt-1 line-clamp-2">{it.summary}</div>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {it.score && it.score >= 80 && (
+                        <span className="text-xs px-1.5 py-0.5 rounded bg-[#2a4a2a] text-[#40c040]">{it.score}</span>
+                      )}
+                      <span className="text-xs text-[#666] whitespace-nowrap">{formatTime(it.publishedAt)}</span>
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {section.items.map((it) => (
-              <a
+        ))}
+
+        {sections.length === 0 && allItems.length > 0 && (
+          <div className="flex flex-col gap-2">
+            {allItems.map((it) => (
+              <button
                 key={it.id || it.url || Math.random()}
-                href={it.url || undefined}
-                target={it.url ? '_blank' : undefined}
-                rel={it.url ? 'noopener noreferrer' : undefined}
-                className={`block p-5 rounded-2xl border transition-all hover:scale-[1.02] ${
-                  it.score && it.score >= 80 
-                    ? 'bg-gradient-to-br from-emerald-950/30 to-slate-900 border-emerald-800/30 hover:border-emerald-600/50' 
-                    : 'bg-slate-900 border-slate-800 hover:border-slate-600'
+                onClick={() => setSelectedItem(it)}
+                className={`text-left p-3 rounded-xl border transition-colors ${
+                  selectedItem?.url === it.url 
+                    ? 'bg-[#1e1e1e] border-[#444]' 
+                    : 'bg-[#1a1a1a] border-[#282828] hover:border-[#444]'
                 }`}
               >
-                <div className="flex items-start justify-between gap-2 mb-2">
-                  <div className="font-bold text-slate-200 line-clamp-2 flex-1">
-                    {it.title || '(无标题)'}
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium text-[#e0e0e0] truncate">{it.title || '(无标题)'}</div>
+                    {it.summary && (
+                      <div className="text-xs text-[#666] mt-1 line-clamp-2">{it.summary}</div>
+                    )}
                   </div>
-                  {it.score && (
-                    <span className={`text-xs px-2 py-0.5 rounded font-bold ${
-                      it.score >= 80 ? 'bg-emerald-600 text-white' : 'bg-slate-700 text-slate-300'
-                    }`}>
-                      {it.score}
-                    </span>
-                  )}
+                  <span className="text-xs text-[#666] whitespace-nowrap">{formatTime(it.publishedAt)}</span>
                 </div>
-                {it.summary && (
-                  <div className="text-sm text-slate-400 line-clamp-3 mb-3">
-                    {it.summary}
-                  </div>
-                )}
-                <div className="flex items-center gap-3 text-xs text-slate-500">
-                  {it.source && <span className="text-indigo-400">{it.source}</span>}
-                  {it.publishedAt && (
-                    <span>
-                      {new Date(it.publishedAt).toLocaleString('zh-CN', { 
-                        month: 'numeric', 
-                        day: 'numeric', 
-                        hour: '2-digit', 
-                        minute: '2-digit' 
-                      })}
-                    </span>
-                  )}
-                </div>
-              </a>
+              </button>
             ))}
           </div>
+        )}
+      </div>
+
+      {selectedItem && (
+        <div className="fixed inset-0 bg-black/80 z-50 overflow-y-auto" onClick={() => setSelectedItem(null)}>
+          <div className="min-h-screen py-10 px-5" onClick={e => e.stopPropagation()}>
+            <div className="max-w-3xl mx-auto bg-[#1a1a1a] border border-[#282828] rounded-xl p-6" style={{ animation: 'fadeIn 0.2s ease' }}>
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <span className={`text-xs px-2 py-1 rounded border ${cat.badge}`}>{cat.label}</span>
+                  {selectedItem.score && (
+                    <span className="text-xs px-2 py-1 rounded bg-[#2a4a2a] text-[#40c040]">⭐ {selectedItem.score}</span>
+                  )}
+                </div>
+                <button onClick={() => setSelectedItem(null)} className="text-[#666] hover:text-[#aaa] text-xl">✕</button>
+              </div>
+              
+              <h2 className="text-xl font-bold text-white mb-3">{selectedItem.title}</h2>
+              
+              <div className="flex items-center gap-4 text-xs text-[#666] mb-5 pb-4 border-b border-[#282828]">
+                {selectedItem.source && <span className="text-[#58a6ff]">{selectedItem.source}</span>}
+                {selectedItem.publishedAt && (
+                  <span>{new Date(selectedItem.publishedAt).toLocaleString('zh-CN')}</span>
+                )}
+              </div>
+
+              {selectedItem.summary && (
+                <div className="prose prose-invert max-w-none">
+                  <p className="text-sm text-[#bbb] leading-relaxed whitespace-pre-wrap">{selectedItem.summary}</p>
+                </div>
+              )}
+
+              {selectedItem.url && (
+                <a
+                  href={selectedItem.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 mt-5 px-4 py-2 rounded-lg bg-[#2a2a2a] hover:bg-[#3a3a3a] border border-[#444] text-[#e0e0e0] text-sm transition-colors"
+                >
+                  打开原文 ↗
+                </a>
+              )}
+            </div>
+          </div>
         </div>
-      ))}
+      )}
     </div>
   );
 };
-
-/**
- * --- MAIN SCREENS ---
- */
 
 const WelcomeScreen = ({ onStart, onGuide }) => (
   <div className="min-h-screen bg-slate-950 text-slate-200 font-sans">
