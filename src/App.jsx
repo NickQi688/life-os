@@ -610,44 +610,57 @@ const HOTFEED_CATEGORIES = [
 const HotfeedView = ({ notify }) => {
   const [category, setCategory] = useState('crypto');
   const [frequency, setFrequency] = useState('4h');
-  const [feed, setFeed] = useState(null);
+  const [indexList, setIndexList] = useState(null);
+  const [currentReport, setCurrentReport] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [selectedItem, setSelectedItem] = useState(null);
 
   const base = (localStorage.getItem('lifeos_hotfeed_base') || DEFAULT_HOTFEED_BASE).replace(/\/+$/, '');
-  const url = `${base}/${category}/${frequency}.json`;
 
-  const load = async ({ silent = false } = {}) => {
+  const loadIndex = async () => {
     if (!base) return;
-    if (!silent) setIsLoading(true);
+    setIsLoading(true);
     setError(null);
     try {
-      const res = await fetch(url, { cache: 'no-store' });
+      const res = await fetch(`${base}/${category}/index.json`, { cache: 'no-store' });
       if (!res.ok) throw new Error(`加载失败: ${res.status}`);
       const data = await res.json();
-      setFeed(data);
-      if (selectedItem) {
-        const next = (data.sections || []).flatMap(s => s.items || []).find(it => it.url && selectedItem.url && it.url === selectedItem.url);
-        setSelectedItem(next || null);
-      }
+      
+      const filtered = data.reports?.filter(r => r.filename.includes(frequency)) || [];
+      setIndexList(filtered);
+    } catch (e) {
+      setError(e.message || String(e));
+      setIndexList([]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const loadReport = async (filename) => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`${base}/${category}/${filename}`, { cache: 'no-store' });
+      if (!res.ok) throw new Error(`加载失败: ${res.status}`);
+      const data = await res.json();
+      setCurrentReport(data);
     } catch (e) {
       setError(e.message || String(e));
     } finally {
-      if (!silent) setIsLoading(false);
+      setIsLoading(false);
     }
   };
 
   useEffect(() => {
-    setSelectedItem(null);
-    load();
-  }, [category, frequency, url]);
+    setCurrentReport(null);
+    loadIndex();
+  }, [category, frequency, base]);
 
   useEffect(() => {
     if (!base) return;
-    const id = setInterval(() => load({ silent: true }), 5 * 60 * 1000);
+    const id = setInterval(() => loadIndex(), 5 * 60 * 1000);
     return () => clearInterval(id);
-  }, [category, frequency, url]);
+  }, [category, frequency, base]);
 
   if (!base) {
     return (
@@ -660,25 +673,27 @@ const HotfeedView = ({ notify }) => {
     );
   }
 
-  const sections = feed?.sections || [];
-  const allItems = feed?.items || [];
-  const generatedAt = feed?.generatedAt ? new Date(feed.generatedAt) : null;
   const cat = HOTFEED_CATEGORIES.find((c) => c.key === category) || HOTFEED_CATEGORIES[0];
 
-  const formatTime = (dateStr) => {
-    if (!dateStr) return '';
-    return new Date(dateStr).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false });
+  const formatDate = (str) => {
+    if (!str) return '';
+    const d = str.replace('4h-', '').replace('daily-', '').replace('T', ' ').replace('Z', '');
+    const date = new Date(d);
+    if (isNaN(date.getTime())) return str;
+    return date.toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
   };
 
-  const extractExcerpt = (content) => {
-    if (!content) return '';
-    const lines = content.split('\n').filter(l => l.trim());
-    for (const line of lines) {
-      const clean = line.replace(/^[#•\-\*]\s*/, '').replace(/\*\*/g, '').trim();
-      if (clean.length > 30) return clean.length > 120 ? clean.slice(0, 120) + '…' : clean;
+  const groupByDate = (reports) => {
+    const groups = {};
+    for (const r of reports) {
+      const dateStr = formatDate(r.generatedAt).split(' ')[0];
+      if (!groups[dateStr]) groups[dateStr] = [];
+      groups[dateStr].push(r);
     }
-    return '';
+    return Object.entries(groups).sort((a, b) => b[0].localeCompare(a[0]));
   };
+
+  const groupedReports = indexList ? groupByDate(indexList) : [];
 
   return (
     <div className="max-w-[900px] mx-auto px-5 py-5">
@@ -688,7 +703,7 @@ const HotfeedView = ({ notify }) => {
           <span className="text-xs text-slate-500">Powered by 6551 + Grok</span>
         </div>
         <button
-          onClick={() => { load(); notify?.('已刷新', 'success'); }}
+          onClick={() => { loadIndex(); notify?.('已刷新', 'success'); }}
           className="px-3 py-1.5 rounded-lg text-xs font-medium bg-[#2a2a2a] hover:bg-[#3a3a3a] border border-[#444] text-[#aaa] transition-colors"
           disabled={isLoading}
         >
@@ -732,115 +747,87 @@ const HotfeedView = ({ notify }) => {
         </div>
       )}
 
-      {sections.length === 0 && !error && !isLoading && (
+      {isLoading && !currentReport && (
+        <div className="text-center py-16 text-[#555]">加载中...</div>
+      )}
+
+      {!isLoading && groupedReports.length === 0 && !error && (
         <div className="text-center py-16 text-[#555] text-sm">
-          暂无数据，请运行 GitHub Actions 生成资讯
+          暂无报告，请运行 GitHub Actions 生成
         </div>
       )}
 
-      <div className="flex flex-col gap-3">
-        {sections.map((section) => (
-          <div key={section.title}>
-            <div className="text-xs font-medium text-[#666] mb-2 pb-2 border-b border-[#1e1e1e]">
-              {section.title} <span className="text-[#444]">({section.items.length}条)</span>
-            </div>
-            <div className="flex flex-col gap-2">
-              {section.items.map((it) => (
-                <button
-                  key={it.id || it.url || Math.random()}
-                  onClick={() => setSelectedItem(it)}
-                  className={`text-left p-3 rounded-xl border transition-colors ${
-                    selectedItem?.url === it.url 
-                      ? 'bg-[#1e1e1e] border-[#444]' 
-                      : 'bg-[#1a1a1a] border-[#282828] hover:border-[#444]'
-                  }`}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium text-[#e0e0e0] truncate">{it.title || '(无标题)'}</div>
-                      {it.summary && (
-                        <div className="text-xs text-[#666] mt-1 line-clamp-2">{it.summary}</div>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      {it.score && it.score >= 80 && (
-                        <span className="text-xs px-1.5 py-0.5 rounded bg-[#2a4a2a] text-[#40c040]">{it.score}</span>
-                      )}
-                      <span className="text-xs text-[#666] whitespace-nowrap">{formatTime(it.publishedAt)}</span>
-                    </div>
-                  </div>
-                </button>
-              ))}
-            </div>
+      {!currentReport && groupedReports.map(([date, reports]) => (
+        <div key={date} className="mb-6">
+          <div className="text-xs font-medium text-[#666] mb-2 pb-2 border-b border-[#1e1e1e]">
+            {date}
           </div>
-        ))}
-
-        {sections.length === 0 && allItems.length > 0 && (
           <div className="flex flex-col gap-2">
-            {allItems.map((it) => (
+            {reports.map((r) => (
               <button
-                key={it.id || it.url || Math.random()}
-                onClick={() => setSelectedItem(it)}
-                className={`text-left p-3 rounded-xl border transition-colors ${
-                  selectedItem?.url === it.url 
-                    ? 'bg-[#1e1e1e] border-[#444]' 
-                    : 'bg-[#1a1a1a] border-[#282828] hover:border-[#444]'
-                }`}
+                key={r.filename}
+                onClick={() => loadReport(r.filename)}
+                className="text-left p-3 rounded-xl bg-[#1a1a1a] border border-[#282828] hover:border-[#444] transition-colors"
               >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium text-[#e0e0e0] truncate">{it.title || '(无标题)'}</div>
-                    {it.summary && (
-                      <div className="text-xs text-[#666] mt-1 line-clamp-2">{it.summary}</div>
-                    )}
-                  </div>
-                  <span className="text-xs text-[#666] whitespace-nowrap">{formatTime(it.publishedAt)}</span>
+                <div className="text-sm font-medium text-[#e0e0e0]">
+                  {formatDate(r.generatedAt)}
                 </div>
               </button>
             ))}
           </div>
-        )}
-      </div>
+        </div>
+      ))}
 
-      {selectedItem && (
-        <div className="fixed inset-0 bg-black/80 z-50 overflow-y-auto" onClick={() => setSelectedItem(null)}>
+      {currentReport && (
+        <div className="fixed inset-0 bg-black/80 z-50 overflow-y-auto" onClick={() => setCurrentReport(null)}>
           <div className="min-h-screen py-10 px-5" onClick={e => e.stopPropagation()}>
-            <div className="max-w-3xl mx-auto bg-[#1a1a1a] border border-[#282828] rounded-xl p-6" style={{ animation: 'fadeIn 0.2s ease' }}>
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-3">
-                  <span className={`text-xs px-2 py-1 rounded border ${cat.badge}`}>{cat.label}</span>
-                  {selectedItem.score && (
-                    <span className="text-xs px-2 py-1 rounded bg-[#2a4a2a] text-[#40c040]">⭐ {selectedItem.score}</span>
-                  )}
+            <div className="max-w-3xl mx-auto bg-[#1a1a1a] border border-[#282828] rounded-xl" style={{ animation: 'fadeIn 0.2s ease' }}>
+              <div className="p-6 border-b border-[#282828]">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className={`text-xs px-2 py-1 rounded border ${cat.badge}`}>{cat.label}</span>
+                    <h2 className="text-xl font-bold text-white mt-3">{currentReport.title}</h2>
+                    <div className="text-xs text-[#666] mt-1">
+                      {currentReport.generatedAt ? new Date(currentReport.generatedAt).toLocaleString('zh-CN') : ''}
+                    </div>
+                  </div>
+                  <button onClick={() => setCurrentReport(null)} className="text-[#666] hover:text-[#aaa] text-xl">✕</button>
                 </div>
-                <button onClick={() => setSelectedItem(null)} className="text-[#666] hover:text-[#aaa] text-xl">✕</button>
               </div>
               
-              <h2 className="text-xl font-bold text-white mb-3">{selectedItem.title}</h2>
-              
-              <div className="flex items-center gap-4 text-xs text-[#666] mb-5 pb-4 border-b border-[#282828]">
-                {selectedItem.source && <span className="text-[#58a6ff]">{selectedItem.source}</span>}
-                {selectedItem.publishedAt && (
-                  <span>{new Date(selectedItem.publishedAt).toLocaleString('zh-CN')}</span>
-                )}
+              <div className="p-6 max-h-[70vh] overflow-y-auto">
+                {currentReport.sections?.map((section) => (
+                  <div key={section.title} className="mb-6">
+                    <h3 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
+                      {section.title}
+                      <span className="text-xs font-normal text-[#666]">({section.items.length}条)</span>
+                    </h3>
+                    <div className="flex flex-col gap-2">
+                      {section.items.map((it) => (
+                        <a
+                          key={it.id || it.url || Math.random()}
+                          href={it.url || undefined}
+                          target={it.url ? '_blank' : undefined}
+                          rel={it.url ? 'noopener noreferrer' : undefined}
+                          className="block p-3 rounded-lg bg-[#141414] border border-[#282828] hover:border-[#444] transition-colors"
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex-1">
+                              <div className="text-sm font-medium text-[#e0e0e0]">{it.title || '(无标题)'}</div>
+                              {it.summary && (
+                                <div className="text-xs text-[#888] mt-1 line-clamp-2">{it.summary}</div>
+                              )}
+                            </div>
+                            {it.score && it.score >= 80 && (
+                              <span className="text-xs px-1.5 py-0.5 rounded bg-[#2a4a2a] text-[#40c040] shrink-0">{it.score}</span>
+                            )}
+                          </div>
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                ))}
               </div>
-
-              {selectedItem.summary && (
-                <div className="prose prose-invert max-w-none">
-                  <p className="text-sm text-[#bbb] leading-relaxed whitespace-pre-wrap">{selectedItem.summary}</p>
-                </div>
-              )}
-
-              {selectedItem.url && (
-                <a
-                  href={selectedItem.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 mt-5 px-4 py-2 rounded-lg bg-[#2a2a2a] hover:bg-[#3a3a3a] border border-[#444] text-[#e0e0e0] text-sm transition-colors"
-                >
-                  打开原文 ↗
-                </a>
-              )}
             </div>
           </div>
         </div>
